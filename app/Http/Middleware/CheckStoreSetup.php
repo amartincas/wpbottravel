@@ -17,6 +17,11 @@ class CheckStoreSetup
         if (app()->runningInConsole()) {
             return $next($request);
         }
+
+       // Skip checks for WhatsApp webhook routes  
+        if ($request->is('api/whatsapp/webhook/*')) {
+            return $next($request);
+        }
         
         // Only check for authenticated users accessing Filament
         if (Auth::check() && $request->path() !== 'yes/store-settings') {
