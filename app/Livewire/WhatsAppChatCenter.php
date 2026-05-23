@@ -6,6 +6,7 @@ use App\Models\Lead;
 use App\Models\Store;
 use App\Models\WhatsAppMessage;
 use App\Services\WhatsAppService;
+use Livewire\Attributes\On;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -21,6 +22,8 @@ class WhatsAppChatCenter extends Component
     public string $newMessage = ''; // For text input field
     public ?int $filterStoreId = null; // For superuser store filtering
     public $stores = []; // Available stores for superuser filter
+    public ?int $selectedLeadId = null; // For JS modal
+    public $whatsappTemplates = [];    // List templates
 
     public function mount()
     {
@@ -169,9 +172,14 @@ class WhatsAppChatCenter extends Component
 
             // Fetch bot_active status, default to true if no record exists yet
             $this->botActive = $lead?->bot_active ?? true;
+            // Store selected lead ID for JS modal (can be null if no lead record exists yet)
+            $this->selectedLeadId = $lead?->id;
+            // Load WhatsApp templates for this store (for manual template sending)
+            $this->whatsappTemplates = \App\Models\WhatsAppTemplate::where('store_id', $storeId)->get();
         }
 
         // Important for JavaScript
+        $this->loadConversations();
         $this->dispatch('scroll-down');
     }
 
@@ -347,4 +355,14 @@ class WhatsAppChatCenter extends Component
             'filter_store_id' => $this->filterStoreId,
         ]);
     }
+
+    // Este método se llamará desde el script del modal tras un envío exitoso
+    #[On('template-sent')] 
+    public function handleTemplateSent()
+    {
+        $this->loadConversations();
+        $this->dispatch('scroll-down');
+        Log::info('Chat refreshed after template send', ['phone' => $this->selectedPhone]);
+    }
+
 }
