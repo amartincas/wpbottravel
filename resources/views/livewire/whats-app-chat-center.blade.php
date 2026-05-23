@@ -1,65 +1,38 @@
-<style>
-    /* Forzar que el scroll sea visible y tenga estilo */
-    .custom-scrollbar::-webkit-scrollbar {
-        width: 8px; /* Un poco más ancha para verla bien */
-        display: block;
-    }
-    .custom-scrollbar::-webkit-scrollbar-track {
-        background: #f9fafb; /* Fondo gris muy claro */
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: #d1d5db; /* Color gris de la barra */
-        border-radius: 4px;
-        border: 2px solid #f9fafb; /* Espacio alrededor para que se vea elegante */
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-        background: #9ca3af; /* Más oscura al pasar el mouse */
-    }
-    
-    /* Regla crítica para Firefox */
-    .custom-scrollbar {
-        scrollbar-width: thin;
-        scrollbar-color: #d1d5db #f9fafb;
-    }
-</style>
-
 <div style="display: grid; grid-template-columns: repeat(12, 1fr); gap: 0; border: 1px solid #e5e7eb; height: 85vh; overflow: hidden; border-radius: 12px; background: white;">
    
     
-    <div wire:poll.10s style="grid-column: span 4 / span 4; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; background: #f9fafb; height: 100%;">
-        <div style="padding: 1rem; border-bottom: 1px solid #e5e7eb; background: white; flex-shrink: 0;">
-            <h2 style="font-size: 1.25rem; font-weight: 700; color: #111827; margin-bottom: 0.5rem;">Chats</h2>
-            @if(Auth::user()->is_super_admin)
+    <div wire:poll.10s style="grid-column: span 4 / span 4; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; background: #f9fafb; height: 100%; min-height: 0; overflow: hidden;">
+ 
+        {{-- Store filter (super admin only) — fixed height, never scrolls --}}
+        @if(Auth::user()->is_super_admin)
+            <div style="padding: 1rem; border-bottom: 1px solid #e5e7eb; background: white; flex-shrink: 0;">
                 <select wire:model.live="filterStoreId" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem; background: white;">
                     <option value="">Todas las Tiendas</option>
                     @foreach($stores as $store)
                         <option value="{{ $store->id }}">{{ $store->name }}</option>
                     @endforeach
                 </select>
-            @endif
-        </div>
-
-        <div style="background-color: white; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; height: 100%;">
-    
-            <div style="padding: 16px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0;">
-                <h2 style="font-weight: bold; color: black;">WhatsApp Chats</h2>
-                </div>
-
-            <div style="flex: 1; overflow-y: auto; min-height: 0;" class="custom-scrollbar">
-                <div style="display: flex; flex-direction: column;">
-                    @foreach($conversations as $conversation)
-                        <button wire:click="selectConversation('{{ $conversation->customer_phone }}')"
-                            style="width: 100%; padding: 12px; text-align: left; border-bottom: 1px solid #f3f4f6; {{ $selectedPhone === $conversation->customer_phone ? 'background-color: #f0fdf4;' : '' }}">
-                            <div style="font-size: 14px; font-weight: 500; color: black;">
-                                {{ $conversation->customer_phone }}
-                            </div>
-                            <div style="font-size: 11px; color: #6b7280;">
-                                {{ \Carbon\Carbon::parse($conversation->last_message_at)->diffForHumans() }}
-                            </div>
-                        </button>
-                    @endforeach
-                </div>
             </div>
+        @endif
+    
+        {{-- Header — fixed height, never scrolls --}}
+        <div style="padding: 16px; border-bottom: 1px solid #e5e7eb; background: white; flex-shrink: 0;">
+            <h2 style="font-weight: bold; color: black; margin: 0;">WhatsApp Chats</h2>
+        </div>
+    
+        {{-- Conversation list — THIS is the only thing that scrolls --}}
+        <div style="flex: 1; overflow-y: auto; min-height: 0; background: white;" class="custom-scrollbar">
+            @foreach($conversations as $conversation)
+                <button wire:click="selectConversation('{{ $conversation->customer_phone }}')"
+                    style="width: 100%; padding: 12px; text-align: left; border: none; border-bottom: 1px solid #f3f4f6; cursor: pointer; {{ $selectedPhone === $conversation->customer_phone ? 'background-color: #f0fdf4;' : 'background: white;' }}">
+                    <div style="font-size: 14px; font-weight: 500; color: black;">
+                        {{ $conversation->customer_phone }}
+                    </div>
+                    <div style="font-size: 11px; color: #6b7280;">
+                        {{ \Carbon\Carbon::parse($conversation->last_message_at)->diffForHumans() }}
+                    </div>
+                </button>
+            @endforeach
         </div>
     </div>
 
