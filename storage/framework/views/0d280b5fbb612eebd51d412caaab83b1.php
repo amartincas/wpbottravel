@@ -43,8 +43,6 @@ unset($__defined_vars, $__key, $__value); ?>
 <?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
 <?php endif; ?>
 <?php $component->withAttributes(['code' => \Illuminate\View\Compilers\BladeCompiler::sanitizeComponentAttribute($code),'language' => 'php','editor' => true,'starting-line' => \Illuminate\View\Compilers\BladeCompiler::sanitizeComponentAttribute(max(1, $highlightedLine - 5)),'highlighted-line' => \Illuminate\View\Compilers\BladeCompiler::sanitizeComponentAttribute(min(5, $highlightedLine - 1)),'class' => 'overflow-x-auto']); ?>
-<?php \Livewire\Features\SupportCompiledWireKeys\SupportCompiledWireKeys::processComponentKey($component); ?>
-
 <?php echo $__env->renderComponent(); ?>
 <?php endif; ?>
 <?php if (isset($__attributesOriginal12cb286571f553eebcbe98210b217f94)): ?>
