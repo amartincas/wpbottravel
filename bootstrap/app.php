@@ -19,7 +19,6 @@ return Application::configure(basePath: dirname(__DIR__))
         // Exclude WhatsApp webhook routes from CSRF protection
         $middleware->validateCsrfTokens(except: [
             'api/whatsapp/webhook/*',
-            'api/whatsapp/templates/send',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

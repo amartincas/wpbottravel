@@ -18,7 +18,6 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('whatsapp')->group(function () {
     Route::get('/webhook/{store_token}',  [WhatsAppController::class, 'verify']);
     Route::post('/webhook/{store_token}', [WhatsAppController::class, 'handle']);
-    Route::post('/templates/send', [WhatsAppController::class, 'sendManualTemplate']);
 });
 
 
