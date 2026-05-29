@@ -21,12 +21,8 @@ Route::prefix('whatsapp')->group(function () {
 });
 
 // ── Authenticated internal routes (Filament dashboard / operator UI) ────────
-Route::middleware('auth:sanctum')->prefix('whatsapp')->group(function () {
-
-    // Send a Meta-approved template message to a lead.
-    // Body: { lead_id, template_id, custom_values? }
+Route::middleware(['web', 'auth'])->prefix('whatsapp')->group(function () {
     Route::post('/templates/send', [WhatsAppController::class, 'sendManualTemplate']);
-
 });
 
 
