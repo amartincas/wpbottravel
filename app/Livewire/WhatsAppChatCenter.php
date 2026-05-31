@@ -356,6 +356,73 @@ class WhatsAppChatCenter extends Component
         ]);
     }
 
+    public function sendTemplate(int $templateId, array $customValues = []): void
+    {
+        // Resolve store_id using the same pattern as sendMessage()
+        $isSuperAdmin = Auth::user()?->is_super_admin ?? false;
+
+        if ($isSuperAdmin && !$this->filterStoreId) {
+            $firstMessage = WhatsAppMessage::query()
+                ->where('customer_phone', $this->selectedPhone)
+                ->first();
+            $storeId = $firstMessage?->store_id;
+        } elseif ($this->filterStoreId) {
+            $storeId = $this->filterStoreId;
+        } else {
+            $storeId = Auth::user()?->store_id;
+        }
+
+        if (!$storeId) {
+            $this->dispatch('template-sent-error');
+            return;
+        }
+
+        $store = Store::find($storeId);
+        if (!$store) {
+            $this->dispatch('template-sent-error');
+            return;
+        }
+
+        $template = \App\Models\WhatsAppTemplate::where('id', $templateId)
+            ->where('store_id', $storeId)
+            ->firstOrFail();
+
+        $lead = Lead::where('customer_phone', $this->selectedPhone)
+            ->where('store_id', $storeId)
+            ->first();
+
+        $parametersMap = $template->parameters_map ?? [];
+        $leadData = [
+            'customer_name'  => $lead?->customer_name  ?? '',
+            'customer_phone' => $lead?->customer_phone ?? '',
+            'product_name'   => $lead?->product_name   ?? '',
+        ];
+
+        $resolvedValues = [];
+        foreach ($parametersMap as $position => $fieldKey) {
+            $idx = (int) $position - 1;
+            $override = $customValues[$idx] ?? null;
+            $resolvedValues[$idx] = ($override !== '' && $override !== null)
+                ? $override
+                : ($leadData[$fieldKey] ?? '');
+        }
+        ksort($resolvedValues);
+
+        $sent = WhatsAppService::sendTemplateMessage(
+            to:           $this->selectedPhone,
+            templateName: $template->name,
+            languageCode: $template->language,
+            variables:    array_values($resolvedValues),
+            store:        $store,
+        );
+
+        if ($sent && $template->is_reengagement && $lead) {
+            $lead->update(['status' => 'waiting_customer', 'bot_active' => true]);
+        }
+
+        $this->dispatch($sent ? 'template-sent-ok' : 'template-sent-error');
+    }
+
     // Este método se llamará desde el script del modal tras un envío exitoso
     #[On('template-sent')] 
     public function handleTemplateSent()

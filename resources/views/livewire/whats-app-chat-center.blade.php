@@ -42,50 +42,19 @@
 
             async submitTemplate() {
                 const inputs = this.$el.querySelectorAll('.tpl-param');
-                const customValues = {};
+                const customValues = [];
                 inputs.forEach(input => {
-                    customValues[input.getAttribute('data-key')] = input.value;
+                    customValues.push(input.value);
                 });
 
-                const payload = {
-                    lead_id:       this.leadId,
-                    template_id:   this.currentTemplateId,
-                    custom_values: customValues
-                };
-
-                try {                    
-                    const response = await fetch('/whatsapp/templates/send', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type':  'application/json',
-                            'Authorization': 'Bearer ' + this.apiToken,
-                            'X-CSRF-TOKEN':  this.csrfToken
-                        },
-                        body: JSON.stringify(payload)
-                    });
-
-                    console.log('Template send status:', response.status);
-                    const responseText = await response.text();
-                    console.log('Template send response:', responseText);
-
-                    let result;
-                    try {
-                        result = JSON.parse(responseText);
-                    } catch (e) {
-                        alert('Respuesta inesperada del servidor. Revisa la consola.');
-                        return;
-                    }
-
-                    if (result.success) {
+                $wire.sendTemplate(this.currentTemplateId, customValues)
+                    .then(() => {
                         alert('Plantilla enviada con exito');
                         this.closeModal();
-                    } else {
-                        alert('Error: ' + (result.message || 'Error desconocido'));
-                    }
-                } catch (error) {
-                    console.error('Template send fetch error:', error);
-                    alert('Error de red: ' + error.message);
-                }
+                    })
+                    .catch(() => {
+                        alert('Error al enviar la plantilla.');
+                    });
             }
         }));
     });
@@ -272,5 +241,8 @@
             scrollDown();
             Livewire.on('scroll-down', () => { setTimeout(scrollDown, 50); });
         });
+
+        Livewire.on('template-sent-ok',    () => { console.log('Template sent OK'); });
+        Livewire.on('template-sent-error', () => { alert('Error al enviar la plantilla desde Meta.'); });
     </script>
 </div>
