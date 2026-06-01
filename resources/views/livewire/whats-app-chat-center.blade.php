@@ -10,6 +10,7 @@
             open: false,
             currentTemplateId: null,
             currentParamsMap: {},
+            templateValues: [],
             templateFormVisible: false,
             selectedTemplateName: '',
 
@@ -37,15 +38,13 @@
                 this.currentTemplateId    = id;
                 this.selectedTemplateName = name;
                 this.currentParamsMap     = paramsMap;
+                this.templateValues = Object.keys(paramsMap).map(() => '');
                 console.log('selectTemplate paramsMap', paramsMap);
                 this.templateFormVisible  = true;
             },
 
             async submitTemplate() {
-                const customValues = Array.from(this.$el.querySelectorAll('.tpl-param'))
-                .sort((a,b) => Number(a.dataset.key) - Number(b.dataset.key))
-                .map(i => i.value.trim());
-                console.log('submitTemplate customValues', customValues);
+                console.log('submitTemplate customValues', this.templateValues);
 
                 const chatComponent = Livewire.all().find(c => c.name === 'whats-app-chat-center');
 
@@ -53,7 +52,7 @@
                     return;
                 }
 
-                await chatComponent.$wire.sendTemplate(this.currentTemplateId, customValues);
+                await chatComponent.$wire.sendTemplate(this.currentTemplateId, this.templateValues);
                 this.closeModal();
             }
         }));
@@ -209,19 +208,18 @@
                     </h5>
 
                     <div style="display: flex; flex-direction: column; gap: 8px;">
-                        <template x-for="(fieldName, key) in currentParamsMap" :key="key">
-                            <div>
-                                <label
-                                    style="font-size: 11px; font-weight: bold; color: #374151; display: block; margin-bottom: 4px;"
-                                    x-text="'Dato para {{' + key + '}} (' + fieldName + '):'">
-                                </label>
-                                <input
-                                    type="text"
-                                    class="tpl-param"
-                                    :data-key="key"
-                                    style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; color: black; box-sizing: border-box;">
-                            </div>
-                        </template>
+                        <template x-for="(fieldName, key, index) in currentParamsMap" :key="key">
+                        <div>
+                            <label
+                                style="font-size: 11px; font-weight: bold; color: #374151; display: block; margin-bottom: 4px;"
+                                x-text="'Dato para {{' + key + '}} (' + fieldName + '):'">
+                            </label>
+                            <input
+                                type="text"
+                                x-model="templateValues[index]" <!-- ← CAMBIA class="tpl-param" :data-key="key" POR ESTO -->
+                                style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; color: black; box-sizing: border-box;">
+                        </div>
+                    </template>
                     </div>
 
                     <button
