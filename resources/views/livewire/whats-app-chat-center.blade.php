@@ -208,16 +208,15 @@
                     </h5>
 
                     <div style="display: flex; flex-direction: column; gap: 8px;">
-                        <template x-for="(fieldName, key) in currentParamsMap" :key="key">
+                        <template x-for="(fieldName, key, index) in currentParamsMap" :key="key">
                             <div>
                                 <label
                                     style="font-size: 11px; font-weight: bold; color: #374151; display: block; margin-bottom: 4px;"
-                                    x-text="'Dato para {{' + key + '}} (' + fieldName + '):'">
+                                    x-text="`Dato para {${key}} (${fieldName}):`">
                                 </label>
                                 <input
                                     type="text"
-                                    class="tpl-param"
-                                    :data-key="key"
+                                    x-model="templateValues[index]"
                                     style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; color: black; box-sizing: border-box;">
                             </div>
                         </template>
