@@ -140,6 +140,25 @@ class WhatsAppController extends Controller
     }
 
     // =========================================================
+    // TIPO: text del restaurante — comando de actualización
+    // Si el fromPhone coincide con store_whatsapp de algún store,
+    // se interpreta como comando del restaurante (LISTO 5, etc.)
+    // y NO se pasa al Job de IA del cliente.
+    // =========================================================
+    if ($type === 'text') {
+        $textBody = $message['text']['body'] ?? null;
+
+        if ($textBody) {
+            $restaurantStore = \App\Models\Store::where('store_whatsapp', $fromPhone)->first();
+
+            if ($restaurantStore) {
+                $this->handleRestaurantTextCommand($restaurantStore, $fromPhone, $textBody);
+                return response('EVENT_RECEIVED', 200);
+            }
+        }
+    }
+
+    // =========================================================
     // TIPO: location — cliente envió su ubicación GPS
     // Se extrae lat/lng, se guarda en el lead más reciente
     // del cliente y se continúa el flujo normal del Job.
@@ -262,6 +281,144 @@ class WhatsAppController extends Controller
  * @param  string $buttonText  Texto del botón presionado
  * @param  array  $message     Payload completo del mensaje
  */
+/**
+ * Procesa comandos de texto enviados por el restaurante.
+ *
+ * Formato esperado: "ESTADO lead_id" — ej: "LISTO 5", "DESPACHADO 3"
+ * Si no viene lead_id, se busca el lead activo más reciente del store.
+ *
+ * Validaciones:
+ *  1. El texto debe contener un estado reconocido.
+ *  2. Si viene lead_id, el lead debe existir y pertenecer al store.
+ *  3. El lead no debe estar ya entregado o cancelado.
+ *
+ * Respuestas al restaurante:
+ *  - Éxito: confirmación con número de pedido y nuevo estado.
+ *  - Error: mensaje descriptivo del problema.
+ */
+private function handleRestaurantTextCommand(
+    \App\Models\Store $store,
+    string $fromPhone,
+    string $text
+): void {
+    // Parsear el comando: extraer estado y lead_id opcional
+    // Formato: "LISTO 5" o "LISTO" o "listo 5"
+    $parts   = preg_split('/\s+/', trim($text), 2);
+    $comando = strtolower($parts[0] ?? '');
+    $leadId  = isset($parts[1]) ? (int) preg_replace('/\D/', '', $parts[1]) : null;
+
+    Log::info('RESTAURANT_TEXT: Comando recibido', [
+        'store_id' => $store->id,
+        'from'     => $fromPhone,
+        'texto'    => $text,
+        'comando'  => $comando,
+        'lead_id'  => $leadId,
+    ]);
+
+    // 1. Resolver estado
+    $newStatus = \App\Models\Lead::resolveStatus($comando);
+
+    if (!$newStatus) {
+        Log::warning('RESTAURANT_TEXT: Comando no reconocido', [
+            'store_id' => $store->id,
+            'comando'  => $comando,
+        ]);
+
+        \App\Services\WhatsAppService::sendMessage(
+            to:      $fromPhone,
+            message: "❓ Comando no reconocido: \"{$text}\"\n\nComandos válidos:\n• ACEPTADO [#pedido]\n• LISTO [#pedido]\n• DESPACHADO [#pedido]\n• ENTREGADO [#pedido]\n• CANCELADO [#pedido]",
+            store:   $store,
+        );
+        return;
+    }
+
+    // 2. Encontrar el lead — por ID específico o el más reciente activo
+    if ($leadId) {
+        $lead = \App\Models\Lead::where('id', $leadId)
+            ->where('store_id', $store->id)
+            ->first();
+
+        if (!$lead) {
+            Log::warning('RESTAURANT_TEXT: Lead no encontrado o no pertenece al store', [
+                'store_id' => $store->id,
+                'lead_id'  => $leadId,
+            ]);
+
+            \App\Services\WhatsAppService::sendMessage(
+                to:      $fromPhone,
+                message: "❌ No se encontró el pedido #{$leadId} para este restaurante.",
+                store:   $store,
+            );
+            return;
+        }
+    } else {
+        $lead = \App\Models\Lead::where('store_id', $store->id)
+            ->whereNotIn('status', [
+                \App\Models\Lead::STATUS_ENTREGADO,
+                \App\Models\Lead::STATUS_CANCELADO,
+            ])
+            ->latest()
+            ->first();
+
+        if (!$lead) {
+            \App\Services\WhatsAppService::sendMessage(
+                to:      $fromPhone,
+                message: "❌ No se encontró ningún pedido activo.",
+                store:   $store,
+            );
+            return;
+        }
+    }
+
+    // 3. Verificar que el lead no esté ya cerrado
+    if (in_array($lead->status, [
+        \App\Models\Lead::STATUS_ENTREGADO,
+        \App\Models\Lead::STATUS_CANCELADO,
+    ])) {
+        \App\Services\WhatsAppService::sendMessage(
+            to:      $fromPhone,
+            message: "⚠ El pedido #{$lead->id} ya está en estado \"{$lead->status}\" y no puede modificarse.",
+            store:   $store,
+        );
+        return;
+    }
+
+    // 4. Actualizar estado
+    $oldStatus = $lead->status;
+    $lead->update(['status' => $newStatus]);
+
+    Log::info('RESTAURANT_TEXT: Estado actualizado', [
+        'store_id'   => $store->id,
+        'lead_id'    => $lead->id,
+        'old_status' => $oldStatus,
+        'new_status' => $newStatus,
+    ]);
+
+    // 5. Confirmar al restaurante
+    \App\Services\WhatsAppService::sendMessage(
+        to:      $fromPhone,
+        message: "✅ Pedido #{$lead->id} actualizado a *{$newStatus}*. Cliente notificado.",
+        store:   $store,
+    );
+
+    // 6. Notificar al cliente
+    $clientMessage = \App\Models\Lead::statusMessage($newStatus);
+
+    if ($clientMessage) {
+        \App\Services\WhatsAppService::sendMessage(
+            to:      $lead->customer_phone,
+            message: $clientMessage,
+            store:   $store,
+        );
+
+        Log::info('RESTAURANT_TEXT: Cliente notificado', [
+            'lead_id'        => $lead->id,
+            'customer_phone' => $lead->customer_phone,
+            'status'         => $newStatus,
+        ]);
+    }
+}
+
 private function handleRestaurantButtonResponse(
     \App\Models\Store $store,
     string $fromPhone,

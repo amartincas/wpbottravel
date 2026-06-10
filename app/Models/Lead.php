@@ -27,8 +27,8 @@ class Lead extends Model
     // Estados válidos del ciclo de vida del pedido
     const STATUS_PENDIENTE       = 'pendiente';
     const STATUS_ACEPTADO        = 'aceptado';
-    const STATUS_EN_PREPARACION  = 'en_preparacion';
     const STATUS_LISTO           = 'listo';
+    const STATUS_DESPACHADO      = 'despachado';
     const STATUS_ENTREGADO       = 'entregado';
     const STATUS_CANCELADO       = 'cancelado';
 
@@ -37,11 +37,10 @@ class Lead extends Model
     const STATUS_MAP = [
         'aceptado'       => self::STATUS_ACEPTADO,
         'accepted'       => self::STATUS_ACEPTADO,
-        'en preparacion' => self::STATUS_EN_PREPARACION,
-        'en_preparacion' => self::STATUS_EN_PREPARACION,
-        'preparacion'    => self::STATUS_EN_PREPARACION,
         'listo'          => self::STATUS_LISTO,
         'ready'          => self::STATUS_LISTO,
+        'despachado'     => self::STATUS_DESPACHADO,
+        'shipped'        => self::STATUS_DESPACHADO,
         'entregado'      => self::STATUS_ENTREGADO,
         'delivered'      => self::STATUS_ENTREGADO,
         'cancelado'      => self::STATUS_CANCELADO,
@@ -52,8 +51,8 @@ class Lead extends Model
     // Mensajes que el bot envía al cliente por cada cambio de estado
     const STATUS_MESSAGES = [
         self::STATUS_ACEPTADO       => '✅ ¡Buenas noticias! El restaurante recibió tu pedido y ya inició la preparación. Te avisamos cuando esté listo.',
-        self::STATUS_EN_PREPARACION => '🍗 Tu pedido está en preparación. Pronto estará listo.',
         self::STATUS_LISTO          => '📦 ¡Tu pedido está listo! Ya salió para entrega.',
+        self::STATUS_DESPACHADO     => '🚚 Tu pedido ha sido despachado. Pronto estará en camino.',
         self::STATUS_ENTREGADO      => '🎉 ¡Tu pedido fue entregado! Gracias por tu compra. ¡Que lo disfrutes!',
         self::STATUS_CANCELADO      => '❌ Tu pedido fue cancelado. Si tienes dudas, escríbenos y te ayudamos.',
     ];
