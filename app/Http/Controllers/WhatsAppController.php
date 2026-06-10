@@ -111,25 +111,106 @@ class WhatsAppController extends Controller
         return response('Not Found', 404);
     }
 
-    $type = $message['type'] ?? null;
+    $type      = $message['type'] ?? null;
     $fromPhone = $message['from'] ?? null;
 
-    $body = null;
+    $body    = null;
     $mediaId = null;
 
+    // =========================================================
+    // TIPO: button — respuesta del restaurante a la plantilla
+    // El restaurante tocó un botón (ej: "Aceptado").
+    // Se actualiza el estado del lead y se notifica al cliente.
+    // Este flujo NO pasa por el Job de IA.
+    // =========================================================
+    if ($type === 'button') {
+        $buttonText = $message['button']['text'] ?? null;
+
+        Log::info('BUTTON_RESPONSE: Respuesta de botón recibida', [
+            'store_id'    => $store->id,
+            'from'        => $fromPhone,
+            'button_text' => $buttonText,
+        ]);
+
+        if ($buttonText) {
+            $this->handleRestaurantButtonResponse($store, $fromPhone, $buttonText, $message);
+        }
+
+        return response('EVENT_RECEIVED', 200);
+    }
+
+    // =========================================================
+    // TIPO: location — cliente envió su ubicación GPS
+    // Se extrae lat/lng, se guarda en el lead más reciente
+    // del cliente y se continúa el flujo normal del Job.
+    // =========================================================
+    if ($type === 'location') {
+        $lat     = $message['location']['latitude']  ?? null;
+        $lng     = $message['location']['longitude'] ?? null;
+        $address = $message['location']['address']   ?? null;
+        $name    = $message['location']['name']      ?? null;
+
+        Log::info('LOCATION_RECEIVED: Cliente envió ubicación', [
+            'store_id' => $store->id,
+            'from'     => $fromPhone,
+            'lat'      => $lat,
+            'lng'      => $lng,
+            'address'  => $address,
+        ]);
+
+        if ($lat && $lng) {
+            // Guardar coordenadas en el lead más reciente del cliente
+            $lead = \App\Models\Lead::where('store_id', $store->id)
+                ->where('customer_phone', $fromPhone)
+                ->latest()
+                ->first();
+
+            if ($lead) {
+                $updateData = ['location' => "{$lat},{$lng}"];
+
+                // Si Meta incluye dirección textual, usarla también
+                if ($address) {
+                    $updateData['delivery_address_or_location'] = $address;
+                } elseif ($name) {
+                    $updateData['delivery_address_or_location'] = $name;
+                }
+
+                $lead->update($updateData);
+
+                Log::info('LOCATION_SAVED: Ubicación guardada en lead', [
+                    'lead_id'  => $lead->id,
+                    'location' => "{$lat},{$lng}",
+                    'address'  => $address ?? $name,
+                ]);
+            }
+
+            // Construir body descriptivo para que el Job lo incluya en el historial
+            $locationParts = ["📍 Ubicación compartida: {$lat},{$lng}"];
+            if ($address) $locationParts[] = $address;
+            elseif ($name) $locationParts[] = $name;
+
+            $body = implode(' — ', $locationParts);
+        }
+
+        if (!$body) {
+            return response('OK', 200);
+        }
+    }
+
+    // =========================================================
+    // TIPOS: text, audio, voice — flujo normal del Job de IA
+    // =========================================================
     if ($type === 'text') {
         $body = $message['text']['body'] ?? null;
     } elseif (in_array($type, ['audio', 'voice'], true)) {
         $mediaId = $message[$type]['id'] ?? null;
-        
-        // 💡 Si es audio, ponle un placeholder temporal al body para evitar romper la lógica aguas abajo
-        $body = "[Mensaje de Voz/Audio]"; 
-        
+        $body    = '[Mensaje de Voz/Audio]';
+
         Log::info('WhatsApp audio/voice message received', [
-            'store_id' => $store->id,
+            'store_id'     => $store->id,
             'customer_phone' => $fromPhone,
-            'message_id' => $phoneId,
-            'media_id' => $mediaId,
+            'message_id'   => $phoneId,
+            'media_id'     => $mediaId,
         ]);
     }
 
@@ -137,7 +218,7 @@ class WhatsAppController extends Controller
         return response('OK', 200);
     }
 
-    Log::info("CONTENIDO REAL: " . $body);
+    Log::info('CONTENIDO REAL: ' . $body);
 
     // Find or create conversation
     $conversation = Conversation::firstOrCreate(
@@ -160,11 +241,90 @@ class WhatsAppController extends Controller
     );
 
     Log::info('WhatsApp message queued for processing', [
-        'store_id' => $store->id,
+        'store_id'   => $store->id,
         'message_id' => $phoneId,
     ]);
 
     return response('EVENT_RECEIVED', 200);
+}
+
+/**
+ * Procesa la respuesta de botón del restaurante.
+ *
+ * El restaurante toca un botón en la plantilla (ej: "Aceptado").
+ * El sistema:
+ *  1. Identifica el lead más reciente del restaurante.
+ *  2. Actualiza lead->status con el estado correspondiente.
+ *  3. Notifica al cliente con el mensaje del nuevo estado.
+ *
+ * @param  Store  $store       Store al que pertenece la conversación
+ * @param  string $fromPhone   Número del restaurante que respondió
+ * @param  string $buttonText  Texto del botón presionado
+ * @param  array  $message     Payload completo del mensaje
+ */
+private function handleRestaurantButtonResponse(
+    \App\Models\Store $store,
+    string $fromPhone,
+    string $buttonText,
+    array $message
+): void {
+    // Resolver el status interno a partir del texto del botón
+    $newStatus = \App\Models\Lead::resolveStatus($buttonText);
+
+    if (!$newStatus) {
+        Log::warning('BUTTON_RESPONSE: Texto de botón no reconocido como estado', [
+            'store_id'    => $store->id,
+            'from'        => $fromPhone,
+            'button_text' => $buttonText,
+        ]);
+        return;
+    }
+
+    // Encontrar el lead más reciente pendiente de este store
+    // El restaurante solo maneja pedidos de su store
+    $lead = \App\Models\Lead::where('store_id', $store->id)
+        ->whereNotIn('status', [
+            \App\Models\Lead::STATUS_ENTREGADO,
+            \App\Models\Lead::STATUS_CANCELADO,
+        ])
+        ->latest()
+        ->first();
+
+    if (!$lead) {
+        Log::warning('BUTTON_RESPONSE: No se encontró lead activo para actualizar', [
+            'store_id'    => $store->id,
+            'button_text' => $buttonText,
+        ]);
+        return;
+    }
+
+    // Actualizar el estado del lead
+    $lead->update(['status' => $newStatus]);
+
+    Log::info('BUTTON_RESPONSE: Estado del lead actualizado', [
+        'store_id'   => $store->id,
+        'lead_id'    => $lead->id,
+        'old_status' => $lead->getOriginal('status'),
+        'new_status' => $newStatus,
+    ]);
+
+    // Notificar al cliente con el mensaje correspondiente al nuevo estado
+    $clientMessage = \App\Models\Lead::statusMessage($newStatus);
+
+    if ($clientMessage) {
+        $sent = \App\Services\WhatsAppService::sendMessage(
+            to:      $lead->customer_phone,
+            message: $clientMessage,
+            store:   $store,
+        );
+
+        Log::info('BUTTON_RESPONSE: Cliente notificado del cambio de estado', [
+            'lead_id'        => $lead->id,
+            'customer_phone' => $lead->customer_phone,
+            'status'         => $newStatus,
+            'sent'           => $sent,
+        ]);
+    }
 }
 // -------------------------------------------------------------------------
     // NEW METHOD
