@@ -12,8 +12,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'customer_phone',
     'customer_name',
     'delivery_address_or_location',
+    'location',
     'product_service_name',
-    'preferred_date_time',
+    'total_amount',
     'summary',
     'is_processed',
     'bot_active',
@@ -26,37 +27,25 @@ class Lead extends Model
     {
         return [
             'is_processed' => 'boolean',
-            'bot_active' => 'boolean',
+            'bot_active'   => 'boolean',
         ];
     }
 
-    /**
-     * Get the store that owns this lead.
-     */
     public function store(): BelongsTo
     {
         return $this->belongsTo(Store::class);
     }
 
-    /**
-     * Mark the lead as processed.
-     */
     public function markAsProcessed(): void
     {
         $this->update(['is_processed' => true]);
     }
 
-    /**
-     * Check if the lead has been processed.
-     */
     public function isProcessed(): bool
     {
         return $this->is_processed === true;
     }
 
-    /**
-     * Get all unprocessed leads for a store.
-     */
     public static function unprocessed($storeId)
     {
         return static::where('store_id', $storeId)
