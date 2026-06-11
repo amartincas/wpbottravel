@@ -27,6 +27,11 @@ class UserForm
                     ->required(fn (string $operation) => $operation === 'create')
                     ->hidden(fn (string $operation) => $operation === 'edit')
                     ->helperText('Password for the user account'),
+                TextInput::make('whatsapp')
+                    ->label('WhatsApp')
+                    ->placeholder('573001234567')
+                    ->helperText('Número con código de país, sin espacios ni símbolos. Permite consultar reportes al bot.')
+                    ->maxLength(20),
                 Select::make('store_id')
                     ->relationship('store', 'name')
                     ->required()

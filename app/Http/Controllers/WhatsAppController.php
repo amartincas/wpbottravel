@@ -140,20 +140,75 @@ class WhatsAppController extends Controller
     }
 
     // =========================================================
-    // TIPO: text del restaurante — comando de actualización
-    // Si el fromPhone coincide con store_whatsapp de algún store,
-    // se interpreta como comando del restaurante (LISTO 5, etc.)
-    // y NO se pasa al Job de IA del cliente.
+    // TIPO: text — verificar si es restaurante, superadmin o cliente
+    // Orden de prioridad:
+    //   1. Reporte (restaurante o superadmin)
+    //   2. Comando de estado (restaurante)
+    //   3. Flujo normal del bot (cliente)
     // =========================================================
     if ($type === 'text') {
         $textBody = $message['text']['body'] ?? null;
 
         if ($textBody) {
+            // ¿Es el restaurante?
             $restaurantStore = \App\Models\Store::where('store_whatsapp', $fromPhone)->first();
 
             if ($restaurantStore) {
+                // ¿Es un comando de reporte?
+                $range = \App\Services\ReportService::parseCommand($textBody);
+                if ($range) {
+                    $report = \App\Services\ReportService::restaurantReport(
+                        $restaurantStore->id,
+                        $range['from'],
+                        $range['to'],
+                        $range['label']
+                    );
+                    \App\Services\WhatsAppService::sendMessage(
+                        to:      $fromPhone,
+                        message: $report,
+                        store:   $restaurantStore,
+                    );
+                    Log::info('REPORT: Reporte enviado al restaurante', [
+                        'store_id' => $restaurantStore->id,
+                        'label'    => $range['label'],
+                    ]);
+                    return response('EVENT_RECEIVED', 200);
+                }
+
+                // ¿Es un comando de estado?
                 $this->handleRestaurantTextCommand($restaurantStore, $fromPhone, $textBody);
                 return response('EVENT_RECEIVED', 200);
+            }
+
+            // ¿Es el superadmin?
+            $superAdmin = \App\Models\User::where('whatsapp', $fromPhone)
+                ->where('is_super_admin', true)
+                ->first();
+
+            if ($superAdmin && $superAdmin->store_id) {
+                $range = \App\Services\ReportService::parseCommand($textBody);
+                if ($range) {
+                    $adminStore = \App\Models\Store::find($superAdmin->store_id);
+                    if ($adminStore) {
+                        $report = \App\Services\ReportService::superAdminReport(
+                            $adminStore->id,
+                            $range['from'],
+                            $range['to'],
+                            $range['label']
+                        );
+                        \App\Services\WhatsAppService::sendMessage(
+                            to:      $fromPhone,
+                            message: $report,
+                            store:   $adminStore,
+                        );
+                        Log::info('REPORT: Reporte enviado al superadmin', [
+                            'user_id'  => $superAdmin->id,
+                            'store_id' => $adminStore->id,
+                            'label'    => $range['label'],
+                        ]);
+                        return response('EVENT_RECEIVED', 200);
+                    }
+                }
             }
         }
     }
@@ -377,7 +432,7 @@ private function handleRestaurantTextCommand(
     ])) {
         \App\Services\WhatsAppService::sendMessage(
             to:      $fromPhone,
-            message: "⚠ El pedido #{$lead->id} ya está en estado \"{$lead->status}\" y no puede modificarse.",
+            message: "⚠️ El pedido #{$lead->id} ya está en estado \"{$lead->status}\" y no puede modificarse.",
             store:   $store,
         );
         return;

@@ -13,7 +13,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
 
-#[Fillable(['name', 'email', 'password', 'store_id', 'is_super_admin'])]
+#[Fillable(['name', 'email', 'password', 'store_id', 'is_super_admin', 'whatsapp'])]
 #[Hidden(['password', 'remember_token'])]
 
 class User extends Authenticatable implements FilamentUser
@@ -26,23 +26,15 @@ class User extends Authenticatable implements FilamentUser
         return true;
     }
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-            'is_super_admin' => 'boolean',
+            'password'          => 'hashed',
+            'is_super_admin'    => 'boolean',
         ];
     }
 
-    /**
-     * Get the user's initials
-     */
     public function initials(): string
     {
         return Str::of($this->name)
@@ -52,11 +44,19 @@ class User extends Authenticatable implements FilamentUser
             ->implode('');
     }
 
-    /**
-     * Get the store this user belongs to
-     */
     public function store(): BelongsTo
     {
         return $this->belongsTo(Store::class);
+    }
+
+    /**
+     * Busca un superadmin por número de WhatsApp dentro de un store.
+     */
+    public static function findSuperAdminByWhatsApp(string $phone, int $storeId): ?self
+    {
+        return static::where('whatsapp', $phone)
+            ->where('store_id', $storeId)
+            ->where('is_super_admin', true)
+            ->first();
     }
 }
