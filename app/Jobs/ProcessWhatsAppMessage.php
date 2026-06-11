@@ -235,7 +235,47 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 ]);
             }
             
-            // 4. Append system metadata (timestamps and completion signal)
+            // 4. Contexto del pedido activo del cliente (Sprint 2)
+            // Se consulta en cada mensaje para que la IA siempre tenga
+            // el estado más reciente cuando el cliente pregunte por su pedido.
+            $activeLead = \App\Models\Lead::where('store_id', $this->store->id)
+                ->where('customer_phone', $this->from)
+                ->whereNotIn('status', [
+                    \App\Models\Lead::STATUS_ENTREGADO,
+                    \App\Models\Lead::STATUS_CANCELADO,
+                ])
+                ->latest()
+                ->first();
+
+            if ($activeLead) {
+                $statusLabels = [
+                    \App\Models\Lead::STATUS_PENDIENTE   => 'Pendiente de confirmación del restaurante',
+                    \App\Models\Lead::STATUS_ACEPTADO    => 'Aceptado — el restaurante está preparando el pedido',
+                    \App\Models\Lead::STATUS_LISTO       => 'Listo — el pedido está listo para despacho',
+                    \App\Models\Lead::STATUS_DESPACHADO  => 'Despachado — el pedido está en camino',
+                    \App\Models\Lead::STATUS_ENTREGADO   => 'Entregado',
+                    \App\Models\Lead::STATUS_CANCELADO   => 'Cancelado',
+                ];
+
+                $statusLabel = $statusLabels[$activeLead->status] ?? $activeLead->status;
+
+                $systemPrompt .= "\n\n### PEDIDO ACTIVO DEL CLIENTE:\n";
+                $systemPrompt .= "Pedido #" . $activeLead->id . "\n";
+                $systemPrompt .= "Producto: " . ($activeLead->product_service_name ?? 'N/A') . "\n";
+                $systemPrompt .= "Total: " . ($activeLead->total_amount ? '$' . number_format((float) preg_replace('/[^0-9.]/', '', $activeLead->total_amount), 0, ',', '.') : 'N/A') . "\n";
+                $systemPrompt .= "Dirección: " . ($activeLead->delivery_address_or_location ?? 'N/A') . "\n";
+                $systemPrompt .= "Estado actual: " . $statusLabel . "\n";
+                $systemPrompt .= "Última actualización: " . $activeLead->updated_at->format('Y-m-d H:i') . "\n";
+                $systemPrompt .= "\nSi el cliente pregunta por su pedido, responde ÚNICAMENTE con el estado registrado arriba. Nunca inventes estados ni tiempos de entrega.\n";
+
+                Log::info('ACTIVE_LEAD_CONTEXT: Inyectado en prompt', [
+                    'store_id' => $this->store->id,
+                    'lead_id'  => $activeLead->id,
+                    'status'   => $activeLead->status,
+                ]);
+            }
+
+            // 5. Append system metadata (timestamps and completion signal)
             $systemPrompt .= "\n\n### SYSTEM METADATA:\n";
             $systemPrompt .= "Current Date/Time: " . now()->format('Y-m-d H:i:s') . "\n";
             $systemPrompt .= "Lead Completion Signal: [LEAD_COMPLETE]\n";
@@ -277,13 +317,13 @@ class ProcessWhatsAppMessage implements ShouldQueue
                     'has_lead_token' => $hasLeadToken,
                 ]);
 
-                $lead = Lead::create([
+                Lead::create([
                     'store_id' => $this->store->id,
                     'customer_phone' => $this->from,
                     'customer_name' => $leadData['customer_name'] ?? null,
                     'delivery_address_or_location' => $leadData['delivery_address_or_location'] ?? null,
                     'product_service_name' => $leadData['product_service_name'] ?? null,
-                    'total_amount' => $leadData['total_amount'] ?? null,
+                    'preferred_date_time' => $leadData['preferred_date_time'] ?? null,
                     'summary' => $messageToSend,
                     'is_processed' => false,
                 ]);
@@ -295,11 +335,6 @@ class ProcessWhatsAppMessage implements ShouldQueue
                     'product_service_name' => $leadData['product_service_name'] ?? null,
                     'completion_method' => $hasLeadToken ? 'explicit_token' : 'heuristic_fallback',
                 ]);
-
-                // =====================================================
-                // SPRINT 1: Notificación automática al restaurante
-                // =====================================================
-                $this->notifyRestaurant($lead, $leadData);
             }
 
             // Process AI response to extract and send images
@@ -368,112 +403,6 @@ class ProcessWhatsAppMessage implements ShouldQueue
     /**
      * Handle a job failure.
      */
-    /**
-     * Envía notificación de nuevo pedido al WhatsApp del restaurante.
-     *
-     * Usa plantilla Meta (HSM) aprobada porque el restaurante nunca
-     * inicia conversación con el bot, por lo que no aplica la ventana
-     * de 24 horas de mensajes libres.
-     *
-     * Variables de la plantilla (en orden):
-     *   {{1}} nombre del restaurante
-     *   {{2}} lead_id
-     *   {{3}} customer_name
-     *   {{4}} delivery_address_or_location
-     *   {{5}} customer_phone
-     *   {{6}} product_service_name
-     *   {{7}} total_amount (valor total con extras incluidos)
-     */
-    private function notifyRestaurant(Lead $lead, array $leadData): void
-    {
-        if (!$this->store->hasRestaurantNotification()) {
-            Log::info('RESTAURANT_NOTIFY: Skipped — store_whatsapp or store_order_template not configured', [
-                'store_id' => $this->store->id,
-            ]);
-            return;
-        }
-
-        try {
-            // Valor del pedido: se usa total_amount extraído por la IA
-            // (incluye extras negociados). Si no está disponible, se busca
-            // el precio base del producto en la BD como fallback.
-            $valor = null;
-
-            if (!empty($lead->total_amount)) {
-                // La IA extrajo el total — formatearlo si es numérico
-                $raw = preg_replace('/[^0-9.]/', '', $lead->total_amount);
-                $valor = is_numeric($raw)
-                    ? '$' . number_format((float) $raw, 0, ',', '.')
-                    : $lead->total_amount;
-            }
-
-            if (!$valor) {
-                // Fallback: precio base del producto en la BD
-                $productName = $leadData['product_service_name'] ?? null;
-                if ($productName) {
-                    $product = \App\Models\Product::where('store_id', $this->store->id)
-                        ->where('name', 'like', '%' . $productName . '%')
-                        ->first();
-                    if ($product) {
-                        $valor = '$' . number_format($product->price, 0, ',', '.');
-                    }
-                }
-            }
-
-            $valor = $valor ?? 'Consultar';
-
-            // Variables en el orden exacto de la plantilla Meta aprobada:
-            // {{1}} nombre del restaurante  → store->name
-            // {{2}} lead_id                 → lead->id
-            // {{3}} customer_name           → leadData
-            // {{4}} delivery_address        → leadData
-            // {{5}} customer_phone          → this->from
-            // {{6}} product_service_name    → leadData
-            // {{7}} valor total             → total_amount o precio base
-            $variables = [
-                $this->store->name,
-                (string) $lead->id,
-                $leadData['customer_name'] ?? 'N/A',
-                $leadData['delivery_address_or_location'] ?? 'N/A',
-                $this->from,
-                $leadData['product_service_name'] ?? 'N/A',
-                $valor,
-            ];
-
-            $sent = WhatsAppService::sendTemplateMessage(
-                to: $this->store->store_whatsapp,
-                templateName: $this->store->store_order_template,
-                languageCode: $this->store->store_order_template_lang ?? 'es_CO',
-                variables: $variables,
-                store: $this->store,
-            );
-
-            if ($sent) {
-                Log::info('RESTAURANT_NOTIFY: Pedido enviado al restaurante', [
-                    'store_id'   => $this->store->id,
-                    'lead_id'    => $lead->id,
-                    'restaurant' => $this->store->store_whatsapp,
-                    'template'   => $this->store->store_order_template,
-                    'valor'      => $valor,
-                ]);
-            } else {
-                Log::warning('RESTAURANT_NOTIFY: Fallo al enviar pedido al restaurante', [
-                    'store_id'   => $this->store->id,
-                    'lead_id'    => $lead->id,
-                    'restaurant' => $this->store->store_whatsapp,
-                ]);
-            }
-        } catch (\Exception $e) {
-            // No relanzamos: un fallo en la notificación al restaurante
-            // NO debe cancelar ni reintentar el job principal.
-            Log::error('RESTAURANT_NOTIFY: Excepción al notificar restaurante', [
-                'store_id' => $this->store->id,
-                'lead_id'  => $lead->id,
-                'error'    => $e->getMessage(),
-            ]);
-        }
-    }
-
     public function failed(\Throwable $exception): void
     {
         Log::error('Job ProcessWhatsAppMessage failed after max retries', [
@@ -761,7 +690,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
             'customer_name' => null,
             'delivery_address_or_location' => null,
             'product_service_name' => null,
-            'total_amount' => null,
+            'preferred_date_time' => null,
         ];
 
         try {
@@ -782,7 +711,7 @@ Return ONLY valid JSON (no markdown, no code blocks, no extra text):
   "customer_name": "extracted name or null",
   "delivery_address_or_location": "address or null",
   "product_service_name": "CURRENT confirmed service only - not from earlier in conversation",
-  "total_amount": "total order value as plain number without symbols, e.g. 48900, or null if not confirmed"
+  "preferred_date_time": "date/time or null"
 }
 
 CONVERSATION:
@@ -847,7 +776,7 @@ PROMPT;
                 $leadData['customer_name'] = $this->sanitizeString($extracted['customer_name'] ?? null, 100);
                 $leadData['delivery_address_or_location'] = $this->sanitizeString($extracted['delivery_address_or_location'] ?? null, 255);
                 $leadData['product_service_name'] = $this->sanitizeString($extracted['product_service_name'] ?? null, 150);
-                $leadData['total_amount'] = $this->sanitizeString($extracted['total_amount'] ?? null, 50);
+                $leadData['preferred_date_time'] = $this->sanitizeString($extracted['preferred_date_time'] ?? null, 150);
 
                 Log::info('Lead Data Successfully Extracted via AI', [
                     'store_id' => $this->store->id,
@@ -956,7 +885,7 @@ PROMPT;
             'customer_name' => null,
             'delivery_address_or_location' => null,
             'product_service_name' => null,
-            'total_amount' => null,
+            'preferred_date_time' => null,
         ];
 
         // Combine recent user messages only (not full history)
@@ -1047,7 +976,7 @@ PROMPT;
             'customer_name' => null,
             'delivery_address_or_location' => null,
             'product_service_name' => null,
-            'total_amount' => null,
+            'preferred_date_time' => null,
         ];
 
         // Combine all user messages from history for analysis
