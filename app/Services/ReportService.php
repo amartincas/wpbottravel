@@ -3,8 +3,8 @@
 namespace App\Services;
 
 use App\Models\Lead;
+use App\Models\Store;
 use Carbon\Carbon;
-use Illuminate\Support\Collection;
 
 class ReportService
 {
@@ -16,19 +16,16 @@ class ReportService
      *   Reporte Mes
      *   Reporte 01-06-2026
      *   Reporte 01-06-2026 al 30-06-2026
-     *
-     * Retorna array con [from, to] como Carbon, o null si no se reconoce.
      */
     public static function parseCommand(string $text): ?array
     {
         $normalized = strtolower(trim($text));
 
-        // Debe empezar con "reporte"
         if (!str_starts_with($normalized, 'reporte')) {
             return null;
         }
 
-        $rest = trim(substr($normalized, 7)); // quitar "reporte"
+        $rest = trim(substr($normalized, 7));
 
         // Reporte Hoy
         if ($rest === 'hoy' || $rest === '') {
@@ -79,8 +76,8 @@ class ReportService
     }
 
     /**
-     * Genera el reporte para el restaurante.
-     * Solo muestra pedidos del store sin información de costos/márgenes.
+     * Reporte para el restaurante.
+     * Solo muestra sus propios pedidos.
      */
     public static function restaurantReport(int $storeId, Carbon $from, Carbon $to, string $label): string
     {
@@ -91,8 +88,8 @@ class ReportService
             ])
             ->get();
 
-        $total    = $leads->count();
-        $ventas   = $leads->sum(fn ($l) => (float) preg_replace('/[^0-9.]/', '', $l->total_amount ?? '0'));
+        $total      = $leads->count();
+        $ventas     = $leads->sum(fn ($l) => (float) preg_replace('/[^0-9.]/', '', $l->total_amount ?? '0'));
         $entregados = $leads->where('status', Lead::STATUS_ENTREGADO)->count();
         $cancelados = $leads->where('status', Lead::STATUS_CANCELADO)->count();
         $pendientes = $leads->whereNotIn('status', [Lead::STATUS_ENTREGADO, Lead::STATUS_CANCELADO])->count();
@@ -111,7 +108,6 @@ class ReportService
             "💰 Ventas: $" . number_format($ventas, 0, ',', '.'),
         ];
 
-        // Top productos
         $topProducts = $leads
             ->groupBy('product_service_name')
             ->map(fn ($g) => $g->count())
@@ -122,8 +118,7 @@ class ReportService
             $lines[] = "";
             $lines[] = "🍗 *Productos más pedidos:*";
             foreach ($topProducts as $product => $count) {
-                $name = $product ?: 'Sin especificar';
-                $lines[] = "  • {$name}: {$count}";
+                $lines[] = "  • " . ($product ?: 'Sin especificar') . ": {$count}";
             }
         }
 
@@ -131,64 +126,69 @@ class ReportService
     }
 
     /**
-     * Genera el reporte completo para el superadmin.
-     * Incluye métricas adicionales y resumen por estado.
+     * Reporte consolidado para el superadmin.
+     * Incluye TODOS los stores del sistema con métricas por store
+     * y un resumen global al final.
      */
-    public static function superAdminReport(int $storeId, Carbon $from, Carbon $to, string $label): string
+    public static function superAdminReport(Carbon $from, Carbon $to, string $label): string
     {
-        $leads = Lead::where('store_id', $storeId)
-            ->whereBetween('created_at', [
-                $from->copy()->setTimezone('UTC'),
-                $to->copy()->setTimezone('UTC'),
-            ])
-            ->get();
+        $stores = Store::all();
 
-        $total      = $leads->count();
-        $ventas     = $leads->sum(fn ($l) => (float) preg_replace('/[^0-9.]/', '', $l->total_amount ?? '0'));
-        $entregados = $leads->where('status', Lead::STATUS_ENTREGADO)->count();
-        $cancelados = $leads->where('status', Lead::STATUS_CANCELADO)->count();
-        $pendientes = $leads->whereNotIn('status', [Lead::STATUS_ENTREGADO, Lead::STATUS_CANCELADO])->count();
-        $ticketProm = $total > 0 ? $ventas / $total : 0;
-        $ventasEntregadas = $leads
-            ->where('status', Lead::STATUS_ENTREGADO)
-            ->sum(fn ($l) => (float) preg_replace('/[^0-9.]/', '', $l->total_amount ?? '0'));
+        if ($stores->isEmpty()) {
+            return "📊 Reporte Admin: {$label}\n\nNo hay stores configurados.";
+        }
 
-        if ($total === 0) {
+        $globalTotal      = 0;
+        $globalVentas     = 0;
+        $globalEntregados = 0;
+        $globalCancelados = 0;
+        $globalClientes   = collect();
+
+        $lines = ["📊 *Reporte Admin: {$label}*", ""];
+
+        foreach ($stores as $store) {
+            $leads = Lead::where('store_id', $store->id)
+                ->whereBetween('created_at', [
+                    $from->copy()->setTimezone('UTC'),
+                    $to->copy()->setTimezone('UTC'),
+                ])
+                ->get();
+
+            if ($leads->isEmpty()) {
+                continue;
+            }
+
+            $total      = $leads->count();
+            $ventas     = $leads->sum(fn ($l) => (float) preg_replace('/[^0-9.]/', '', $l->total_amount ?? '0'));
+            $entregados = $leads->where('status', Lead::STATUS_ENTREGADO)->count();
+            $cancelados = $leads->where('status', Lead::STATUS_CANCELADO)->count();
+            $pendientes = $leads->whereNotIn('status', [Lead::STATUS_ENTREGADO, Lead::STATUS_CANCELADO])->count();
+
+            // Acumular globales
+            $globalTotal      += $total;
+            $globalVentas     += $ventas;
+            $globalEntregados += $entregados;
+            $globalCancelados += $cancelados;
+            $globalClientes   = $globalClientes->merge($leads->pluck('customer_phone'));
+
+            $lines[] = "🏪 *{$store->name}*";
+            $lines[] = "  📦 Pedidos: {$total} | 💰 $" . number_format($ventas, 0, ',', '.');
+            $lines[] = "  ✅ Entregados: {$entregados} | ⏳ En proceso: {$pendientes} | ❌ Cancelados: {$cancelados}";
+            $lines[] = "";
+        }
+
+        if ($globalTotal === 0) {
             return "📊 Reporte Admin: {$label}\n\nNo se encontraron pedidos en este período.";
         }
 
-        $lines = [
-            "📊 *Reporte Admin: {$label}*",
-            "",
-            "📦 Pedidos totales: {$total}",
-            "✅ Entregados: {$entregados}",
-            "⏳ En proceso: {$pendientes}",
-            "❌ Cancelados: {$cancelados}",
-            "",
-            "💰 Ventas totales: $" . number_format($ventas, 0, ',', '.'),
-            "💵 Ventas entregadas: $" . number_format($ventasEntregadas, 0, ',', '.'),
-            "🎯 Ticket promedio: $" . number_format($ticketProm, 0, ',', '.'),
-        ];
+        $ticketProm     = $globalTotal > 0 ? $globalVentas / $globalTotal : 0;
+        $clientesUnicos = $globalClientes->unique()->count();
 
-        // Top productos
-        $topProducts = $leads
-            ->groupBy('product_service_name')
-            ->map(fn ($g) => $g->count())
-            ->sortDesc()
-            ->take(3);
-
-        if ($topProducts->isNotEmpty()) {
-            $lines[] = "";
-            $lines[] = "🍗 *Productos más pedidos:*";
-            foreach ($topProducts as $product => $count) {
-                $name = $product ?: 'Sin especificar';
-                $lines[] = "  • {$name}: {$count}";
-            }
-        }
-
-        // Clientes únicos
-        $clientesUnicos = $leads->pluck('customer_phone')->unique()->count();
-        $lines[] = "";
+        $lines[] = "━━━━━━━━━━━━━━━";
+        $lines[] = "📦 Total pedidos: {$globalTotal}";
+        $lines[] = "💰 Ventas totales: $" . number_format($globalVentas, 0, ',', '.');
+        $lines[] = "✅ Entregados: {$globalEntregados} | ❌ Cancelados: {$globalCancelados}";
+        $lines[] = "🎯 Ticket promedio: $" . number_format($ticketProm, 0, ',', '.');
         $lines[] = "👥 Clientes únicos: {$clientesUnicos}";
 
         return implode("\n", $lines);

@@ -185,29 +185,27 @@ class WhatsAppController extends Controller
                 ->where('is_super_admin', true)
                 ->first();
 
-            if ($superAdmin && $superAdmin->store_id) {
+            if ($superAdmin) {
                 $range = \App\Services\ReportService::parseCommand($textBody);
                 if ($range) {
-                    $adminStore = \App\Models\Store::find($superAdmin->store_id);
-                    if ($adminStore) {
-                        $report = \App\Services\ReportService::superAdminReport(
-                            $adminStore->id,
-                            $range['from'],
-                            $range['to'],
-                            $range['label']
-                        );
-                        \App\Services\WhatsAppService::sendMessage(
-                            to:      $fromPhone,
-                            message: $report,
-                            store:   $adminStore,
-                        );
-                        Log::info('REPORT: Reporte enviado al superadmin', [
-                            'user_id'  => $superAdmin->id,
-                            'store_id' => $adminStore->id,
-                            'label'    => $range['label'],
-                        ]);
-                        return response('EVENT_RECEIVED', 200);
-                    }
+                    // Reporte consolidado de TODOS los stores.
+                    // Se usa el store del webhook para enviar la respuesta
+                    // ya que es el que tiene las credenciales de WhatsApp activas.
+                    $report = \App\Services\ReportService::superAdminReport(
+                        $range['from'],
+                        $range['to'],
+                        $range['label']
+                    );
+                    \App\Services\WhatsAppService::sendMessage(
+                        to:      $fromPhone,
+                        message: $report,
+                        store:   $store,
+                    );
+                    Log::info('REPORT: Reporte consolidado enviado al superadmin', [
+                        'user_id' => $superAdmin->id,
+                        'label'   => $range['label'],
+                    ]);
+                    return response('EVENT_RECEIVED', 200);
                 }
             }
         }
@@ -432,7 +430,7 @@ private function handleRestaurantTextCommand(
     ])) {
         \App\Services\WhatsAppService::sendMessage(
             to:      $fromPhone,
-            message: "⚠️ El pedido #{$lead->id} ya está en estado \"{$lead->status}\" y no puede modificarse.",
+            message: "⚠ El pedido #{$lead->id} ya está en estado \"{$lead->status}\" y no puede modificarse.",
             store:   $store,
         );
         return;
