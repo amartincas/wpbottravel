@@ -14,6 +14,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
+use UnitEnum;
 
 class CustomerLeadResource extends Resource
 {
@@ -23,7 +24,7 @@ class CustomerLeadResource extends Resource
 
     protected static ?string $navigationLabel = 'CRM Leads';
 
-    protected static ?string $navigationGroup = 'CRM';
+    protected static string|UnitEnum|null $navigationGroup = 'CRM';
 
     protected static ?int $navigationSort = 1;
 
