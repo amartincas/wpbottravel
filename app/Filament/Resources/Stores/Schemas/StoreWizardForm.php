@@ -132,6 +132,37 @@ class StoreWizardForm
                         return self::$personaTemplates[$personality] ?? '';
                     })
                     ->reactive(),
+                // === Status, COntact, Template ===
+                \Filament\Forms\Components\Select::make('status')
+                    ->label('Estado del Store')
+                    ->options([
+                        'active'   => '✅ Activo',
+                        'inactive' => '⏸️ Inactivo',
+                        'demo'     => '🎯 Demo',
+                    ])
+                    ->default('active')
+                    ->required()
+                    ->helperText('Demo: simulación completa sin persistir pedidos en BD')
+                    ->columnSpanFull(),
+ 
+                TextInput::make('store_whatsapp')
+                    ->label('WhatsApp del Restaurante')
+                    ->placeholder('573001234567')
+                    ->helperText('Número con código de país, sin espacios ni símbolos. Ej: 573001234567')
+                    ->columnSpanFull(),
+ 
+                TextInput::make('store_order_template')
+                    ->label('Plantilla Meta para Pedidos')
+                    ->placeholder('nuevo_pedido')
+                    ->helperText('Nombre exacto de la plantilla aprobada en Meta Business Manager')
+                    ->columnSpanFull(),
+ 
+                TextInput::make('store_order_template_lang')
+                    ->label('Idioma de la Plantilla')
+                    ->placeholder('es_CO')
+                    ->default('es_CO')
+                    ->helperText('Código de idioma BCP-47. Ej: es_CO, en_US, es_MX')
+                    ->columnSpanFull(),
             ]);
     }
 }
