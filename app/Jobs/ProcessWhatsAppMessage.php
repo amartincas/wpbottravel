@@ -235,7 +235,77 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 ]);
             }
             
-            // 4. Contexto del pedido activo del cliente (Sprint 2)
+            // 4. Contexto del cliente conocido (CRM)
+            // Búsqueda en cascada:
+            //   1. Por store_id + customer_phone (cliente del restaurante actual)
+            //   2. Por customer_phone en cualquier store (cliente de la plataforma)
+            // Si se encuentra, se inyectan sus datos para personalizar la experiencia
+            // y precargar nombre, teléfono y dirección sin volver a pedirlos.
+            $knownCustomer = \App\Models\CustomerLead::where('store_id', $this->store->id)
+                ->where('customer_phone', $this->from)
+                ->first();
+
+            $knownCustomerScope = 'store'; // cliente del mismo restaurante
+
+            if (!$knownCustomer) {
+                $knownCustomer = \App\Models\CustomerLead::where('customer_phone', $this->from)
+                    ->whereNotNull('customer_name')
+                    ->latest()
+                    ->first();
+                $knownCustomerScope = 'platform'; // cliente de otro restaurante
+            }
+
+            if ($knownCustomer && !empty($knownCustomer->customer_name)) {
+                // Buscar la dirección del último pedido confirmado
+                $lastOrder = \App\Models\Lead::where('store_id', $this->store->id)
+                    ->where('customer_phone', $this->from)
+                    ->whereNotNull('delivery_address_or_location')
+                    ->whereIn('status', [
+                        \App\Models\Lead::STATUS_ENTREGADO,
+                        \App\Models\Lead::STATUS_DESPACHADO,
+                        \App\Models\Lead::STATUS_LISTO,
+                        \App\Models\Lead::STATUS_ACEPTADO,
+                    ])
+                    ->latest()
+                    ->first();
+
+                $isReturning = $knownCustomer->total_orders > 0;
+
+                $systemPrompt .= "\n\n### CLIENTE CONOCIDO:\n";
+                $systemPrompt .= "Nombre: " . $knownCustomer->customer_name . "\n";
+                $systemPrompt .= "Teléfono: " . $knownCustomer->customer_phone . "\n";
+
+                if ($lastOrder && $lastOrder->delivery_address_or_location) {
+                    $systemPrompt .= "Dirección registrada: " . $lastOrder->delivery_address_or_location . "\n";
+                }
+
+                if ($isReturning) {
+                    $systemPrompt .= "Total pedidos anteriores: " . $knownCustomer->total_orders . "\n";
+                    $systemPrompt .= "\nINSTRUCCIONES:\n";
+                    $systemPrompt .= "- Salúdalo por su nombre desde el PRIMER mensaje: \"¡Hola {$knownCustomer->customer_name}! 👋 Qué gusto tenerte de vuelta.\"\n";
+                } else {
+                    $systemPrompt .= "\nINSTRUCCIONES:\n";
+                    $systemPrompt .= "- Salúdalo por su nombre desde el PRIMER mensaje: \"¡Hola {$knownCustomer->customer_name}! 👋 Bienvenido.\"\n";
+                }
+
+                $systemPrompt .= "- NO vuelvas a pedir su nombre ni teléfono — ya los tienes.\n";
+
+                if ($lastOrder && $lastOrder->delivery_address_or_location) {
+                    $systemPrompt .= "- Cuando necesites la dirección, usa la registrada arriba y pregunta: \"¿Entregamos en {$lastOrder->delivery_address_or_location} o prefieres otra dirección?\"\n";
+                    $systemPrompt .= "- Solo pide dirección nueva si el cliente indica que quiere cambiarla.\n";
+                }
+
+                Log::info('CRM_CONTEXT: Cliente conocido inyectado en prompt', [
+                    'store_id'     => $this->store->id,
+                    'phone'        => $this->from,
+                    'name'         => $knownCustomer->customer_name,
+                    'scope'        => $knownCustomerScope,
+                    'is_returning' => $isReturning,
+                    'has_address'  => !empty($lastOrder?->delivery_address_or_location),
+                ]);
+            }
+
+            // 5. Contexto del pedido activo del cliente (Sprint 2)
             // Se consulta en cada mensaje para que la IA siempre tenga
             // el estado más reciente cuando el cliente pregunte por su pedido.
             $activeLead = \App\Models\Lead::where('store_id', $this->store->id)
@@ -300,14 +370,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
             $leadData = $this->extractLeadDataWithAI($history, $aiResponse);
             $shouldCreateLead = $this->shouldCreateLeadFromResponse($aiResponse, $leadData, $hasLeadToken);
 
-            // =====================================================
-            // MODO DEMO: simula el flujo completo sin persistir datos
-            // El bot responde y notifica al store_whatsapp configurado
-            // pero NO crea registros en leads ni en customer_leads.
-            // =====================================================
-            $isDemoMode = $this->store->isDemo();
-
-            if ($shouldCreateLead && !$isDemoMode) {
+            if ($shouldCreateLead) {
                 if ($hasLeadToken) {
                     $messageToSend = preg_replace('/\[LEAD_COMPLETE\]/', '', $aiResponse);
                     $messageToSend = trim($messageToSend);
@@ -354,23 +417,6 @@ class ProcessWhatsAppMessage implements ShouldQueue
 
                 // CRM: Registrar pedido en CustomerLead
                 $this->registerOrderInCrm($lead, $leadData);
-
-            } elseif ($shouldCreateLead && $isDemoMode) {
-                // DEMO: limpiar token y notificar sin persistir
-                if ($hasLeadToken) {
-                    $messageToSend = preg_replace('/\[LEAD_COMPLETE\]/', '', $aiResponse);
-                    $messageToSend = trim($messageToSend);
-                }
-
-                Log::info('DEMO_MODE: Pedido simulado — no se persiste en BD', [
-                    'store_id'       => $this->store->id,
-                    'customer_phone' => $this->from,
-                    'product'        => $leadData['product_service_name'] ?? null,
-                    'total_amount'   => $leadData['total_amount'] ?? null,
-                ]);
-
-                // Notificar al store_whatsapp (número demo configurado con STORE command)
-                $this->notifyRestaurantDemo($leadData);
             }
 
             // Process AI response to extract and send images
@@ -575,74 +621,6 @@ class ProcessWhatsAppMessage implements ShouldQueue
         ]);
 
         return $snapshot;
-    }
-
-    /**
-     * Notifica al restaurante en modo DEMO.
-     * Usa el mismo mecanismo que notifyRestaurant() pero sin instancia de Lead.
-     * No persiste nada en la BD — solo envía la plantilla al store_whatsapp.
-     */
-    private function notifyRestaurantDemo(array $leadData): void
-    {
-        if (!$this->store->hasRestaurantNotification()) {
-            Log::info('DEMO_MODE: Skipped notify — store_whatsapp or template not configured', [
-                'store_id' => $this->store->id,
-            ]);
-            return;
-        }
-
-        try {
-            $productName = $leadData['product_service_name'] ?? 'N/A';
-            $valor       = 'N/A';
-
-            if (!empty($leadData['total_amount'])) {
-                $raw   = preg_replace('/[^0-9.]/', '', $leadData['total_amount']);
-                $valor = is_numeric($raw)
-                    ? '$' . number_format((float) $raw, 0, ',', '.')
-                    : $leadData['total_amount'];
-            }
-
-            // Resolver nombre limpio del producto desde BD
-            $product = \App\Models\Product::where('store_id', $this->store->id)
-                ->where('name', 'like', '%' . $productName . '%')
-                ->first();
-
-            $productForTemplate = $product?->name ?? $productName;
-            if (!empty($leadData['order_extras'])) {
-                $productForTemplate .= ' + ' . $leadData['order_extras'];
-            }
-
-            $variables = [
-                '[DEMO] ' . $this->store->name,
-                'DEMO',
-                $leadData['customer_name'] ?? 'N/A',
-                $leadData['delivery_address_or_location'] ?? 'N/A',
-                $this->from,
-                $productForTemplate,
-                $valor,
-            ];
-
-            $sent = WhatsAppService::sendTemplateMessage(
-                to:           $this->store->store_whatsapp,
-                templateName: $this->store->store_order_template,
-                languageCode: $this->store->store_order_template_lang ?? 'es_CO',
-                variables:    $variables,
-                store:        $this->store,
-            );
-
-            Log::info('DEMO_MODE: Notificación demo enviada', [
-                'store_id'  => $this->store->id,
-                'to'        => $this->store->store_whatsapp,
-                'product'   => $productForTemplate,
-                'sent'      => $sent,
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('DEMO_MODE: Error al enviar notificación demo', [
-                'store_id' => $this->store->id,
-                'error'    => $e->getMessage(),
-            ]);
-        }
     }
 
     private function notifyRestaurant(Lead $lead, array $leadData): void
