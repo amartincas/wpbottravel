@@ -202,6 +202,13 @@ class WhatsAppController extends Controller
                 ->first();
 
             if ($superAdmin) {
+                // ¿Es un comando STORE para actualizar configuración?
+                $storeUpdate = $this->parseStoreCommand($textBody);
+                if ($storeUpdate) {
+                    $this->handleStoreCommand($store, $fromPhone, $storeUpdate);
+                    return response('EVENT_RECEIVED', 200);
+                }
+
                 $range = \App\Services\ReportService::parseCommand($textBody);
                 if ($range) {
                     // Reporte consolidado de TODOS los stores.
@@ -317,6 +324,26 @@ class WhatsAppController extends Controller
                         'maps_link'  => $mapsLink,
                     ]);
                 }
+            }
+
+            // Si el pedido está en estado activo de entrega, no pasar al Job de IA
+            $activeLead = $lead ?? \App\Models\Lead::where('store_id', $store->id)
+                ->where('customer_phone', $fromPhone)
+                ->latest()
+                ->first();
+
+            $skipAI = $activeLead && in_array($activeLead->status, [
+                \App\Models\Lead::STATUS_LISTO,
+                \App\Models\Lead::STATUS_DESPACHADO,
+                \App\Models\Lead::STATUS_ACEPTADO,
+            ]);
+
+            if ($skipAI) {
+                Log::info('LOCATION: Ubicación guardada sin pasar al Job de IA — estado: ' . ($activeLead->status ?? 'N/A'), [
+                    'store_id' => $store->id,
+                    'lead_id'  => $activeLead->id ?? null,
+                ]);
+                return response('EVENT_RECEIVED', 200);
             }
 
             // Construir body descriptivo para que el Job lo incluya en el historial
@@ -886,5 +913,84 @@ private function handleRestaurantButtonResponse(
         }
 
         return Store::where('wa_phone_number_id', (string) $phoneNumberId)->first();
+    }
+
+    /**
+     * Parsea un comando STORE del superadmin.
+     * Formatos soportados:
+     *   STORE 2 WHATSAPP 573001234567
+     *   STORE 2 NOMBRE Restaurante X
+     *   STORE 2 DEMO | STORE 2 ACTIVE | STORE 2 INACTIVE
+     *   STORE 2 WHATSAPP 573001234567 NOMBRE Restaurante X
+     */
+    private function parseStoreCommand(string $text): ?array
+    {
+        if (!preg_match('/^STORE\s+(\d+)\s+(.+)$/i', trim($text), $matches)) {
+            return null;
+        }
+
+        $storeId = (int) $matches[1];
+        $rest    = trim($matches[2]);
+        $updates = [];
+
+        if (preg_match('/^(DEMO|ACTIVE|INACTIVE)$/i', $rest, $sm)) {
+            $updates['status'] = strtolower($sm[1]);
+        }
+
+        if (preg_match('/WHATSAPP\s+(\d{10,15})/i', $rest, $wm)) {
+            $updates['store_whatsapp'] = $wm[1];
+        }
+
+        if (preg_match('/NOMBRE\s+(.+?)(?:\s+WHATSAPP|\s+DEMO|\s+ACTIVE|$)/i', $rest, $nm)) {
+            $updates['name'] = trim($nm[1]);
+        }
+
+        return empty($updates) ? null : ['store_id' => $storeId, 'updates' => $updates];
+    }
+
+    /**
+     * Ejecuta el comando STORE — actualiza los campos del store indicado.
+     */
+    private function handleStoreCommand(
+        \App\Models\Store $currentStore,
+        string $fromPhone,
+        array $command
+    ): void {
+        $targetStore = \App\Models\Store::find($command['store_id']);
+
+        if (!$targetStore) {
+            \App\Services\WhatsAppService::sendMessage(
+                to:      $fromPhone,
+                message: "❌ Store #{$command['store_id']} no encontrado.",
+                store:   $currentStore,
+            );
+            return;
+        }
+
+        $targetStore->update($command['updates']);
+
+        Log::info('STORE_COMMAND: Store actualizado por superadmin', [
+            'store_id' => $targetStore->id,
+            'updates'  => $command['updates'],
+        ]);
+
+        $statusLabels = ['active' => '✅ Activo', 'demo' => '🎯 Demo', 'inactive' => '⏸️ Inactivo'];
+        $lines = ["✅ *Store #{$targetStore->id} actualizado:*"];
+        if (isset($command['updates']['status'])) {
+            $label = $statusLabels[$command['updates']['status']] ?? $command['updates']['status'];
+            $lines[] = "🔄 Status: {$label}";
+        }
+        if (isset($command['updates']['name'])) {
+            $lines[] = "🏪 Nombre: {$command['updates']['name']}";
+        }
+        if (isset($command['updates']['store_whatsapp'])) {
+            $lines[] = "📱 WhatsApp: {$command['updates']['store_whatsapp']}";
+        }
+
+        \App\Services\WhatsAppService::sendMessage(
+            to:      $fromPhone,
+            message: implode("\n", $lines),
+            store:   $currentStore,
+        );
     }
 }
