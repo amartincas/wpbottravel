@@ -366,7 +366,9 @@ class WhatsAppController extends Controller
         $body = $message['text']['body'] ?? null;
     } elseif (in_array($type, ['audio', 'voice'], true)) {
         $mediaId = $message[$type]['id'] ?? null;
-        $body    = '[Mensaje de Voz/Audio]';
+        
+        // Keep body empty so ProcessWhatsAppMessage can trigger transcription logic
+        $body = null;
 
         Log::info('WhatsApp audio/voice message received', [
             'store_id'     => $store->id,
