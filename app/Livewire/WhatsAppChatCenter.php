@@ -286,17 +286,17 @@ class WhatsAppChatCenter extends Component
         }
     }
 
-    public function messageStatus(WhatsAppMessage $message): ?string
+    public function messageStatus(WhatsAppMessage $message): ?array
     {
         $status = WhatsAppStatusTracker::getStatusForMessage($message->id);
 
         return match ($status) {
-            'pending' => '⏱️',
-            'sent' => '✓',
-            'delivered' => '✓✓',
-            'read' => '✓✓',
-            'failed' => '✗',
-            default => null,
+            'pending'   => ['icon' => '⏱️', 'color' => '#6b7280'],
+            'sent'      => ['icon' => '✓', 'color' => '#6b7280'],
+            'delivered' => ['icon' => '✓✓', 'color' => '#6b7280'],
+            'read'      => ['icon' => '✓✓', 'color' => '#2563eb'],
+            'failed'    => ['icon' => '✗', 'color' => '#dc2626'],
+            default     => null,
         };
     }
 

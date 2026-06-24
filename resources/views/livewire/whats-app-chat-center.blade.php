@@ -149,11 +149,11 @@
                                         <span style="font-size: 10px; color: #6b7280;">{{ $message->created_at->format('H:i') }}</span>
                                         @if($message->role === 'assistant')
                                             @php
-                                                $statusIcon = $this->messageStatus($message);
+                                                $status = $this->messageStatus($message);
                                             @endphp
-                                            @if($statusIcon)
-                                                <span style="font-size: 10px; color: {{ $statusIcon === '✓✓' && WhatsAppStatusTracker::getStatusForMessage($message->id) === 'read' ? '#2563eb' : '#6b7280' }};">
-                                                    {{ $statusIcon }}
+                                            @if($status)
+                                                <span style="font-size: 10px; color: {{ $status['color'] }};">
+                                                    {{ $status['icon'] }}
                                                 </span>
                                             @endif
                                         @endif
