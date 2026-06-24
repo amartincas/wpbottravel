@@ -154,10 +154,18 @@ class ProcessWhatsAppMessage implements ShouldQueue
                         'trace' => $e->getTraceAsString(),
                     ]);
 
+                    $transcriptionRecoveryMessage = WhatsAppMessage::create([
+                        'store_id' => $this->store->id,
+                        'customer_phone' => $this->from,
+                        'role' => 'assistant',
+                        'content' => 'No pude transcribir tu audio. Por favor intenta de nuevo o escríbeme tu pregunta.',
+                    ]);
+
                     WhatsAppService::sendMessage(
                         $this->from,
-                        'No pude transcribir tu audio. Por favor intenta de nuevo o escríbeme tu pregunta.',
-                        $this->store
+                        $transcriptionRecoveryMessage->content,
+                        $this->store,
+                        $transcriptionRecoveryMessage->id
                     );
 
                     return;
@@ -385,7 +393,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
             ]);
 
             // Save AI response to database
-            WhatsAppMessage::create([
+            $aiResponseMessage = WhatsAppMessage::create([
                 'store_id' => $this->store->id,
                 'customer_phone' => $this->from,
                 'role' => 'assistant',
@@ -393,7 +401,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
             ]);
 
             // Send AI response back to customer (without the [LEAD_COMPLETE] tag)
-            WhatsAppService::sendMessage($this->from, $messageToSend, $this->store);
+            WhatsAppService::sendMessage($this->from, $messageToSend, $this->store, $aiResponseMessage->id);
 
             Log::info('WhatsApp message processed successfully by job', [
                 'store_id' => $this->store->id,
@@ -417,7 +425,14 @@ class ProcessWhatsAppMessage implements ShouldQueue
             // Send graceful fallback message to customer only on API failures
             $fallbackMessage = 'Lo siento, estoy experimentando dificultades técnicas. Por favor intenta más tarde.';
             try {
-                WhatsAppService::sendMessage($this->from, $fallbackMessage, $this->store);
+                $fallbackMessageRow = WhatsAppMessage::create([
+                    'store_id' => $this->store->id,
+                    'customer_phone' => $this->from,
+                    'role' => 'assistant',
+                    'content' => $fallbackMessage,
+                ]);
+
+                WhatsAppService::sendMessage($this->from, $fallbackMessageRow->content, $this->store, $fallbackMessageRow->id);
             } catch (\Exception $sendError) {
                 Log::error('Failed to send fallback message', [
                     'store_id' => $this->store->id,
