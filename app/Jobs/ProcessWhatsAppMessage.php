@@ -187,10 +187,29 @@ class ProcessWhatsAppMessage implements ShouldQueue
             $history = $rawHistory
                 ->reverse()
                 ->map(function (WhatsAppMessage $msg) {
-                    return [
-                        'role' => $msg->role,
-                        'content' => $msg->content,
-                    ];
+                    // OpenAI solo acepta: user, assistant, system, tool, function
+                    // Mapeamos restaurant y system (BD) a roles válidos para la IA.
+                    // El contenido se prefija para que la IA entienda el contexto.
+                    switch ($msg->role) {
+                        case 'restaurant':
+                            // Mensaje del restaurante — tratarlo como usuario externo
+                            return [
+                                'role'    => 'user',
+                                'content' => '[Restaurante]: ' . $msg->content,
+                            ];
+                        case 'system':
+                            // Notificación automática del sistema — tratarla como respuesta del bot
+                            return [
+                                'role'    => 'assistant',
+                                'content' => $msg->content,
+                            ];
+                        default:
+                            // user / assistant — pasar tal cual
+                            return [
+                                'role'    => $msg->role,
+                                'content' => $msg->content,
+                            ];
+                    }
                 })
                 ->toArray();
 
