@@ -7,7 +7,6 @@ use App\Models\Conversation;
 use App\Models\Store;
 use App\Models\WhatsAppMessage;
 use App\Services\WhatsAppService;
-use App\Services\WhatsAppStatusTracker;
 use Livewire\Attributes\On;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +27,6 @@ class WhatsAppChatCenter extends Component
     public $stores = []; // Available stores for superuser filter
     public ?int $selectedLeadId = null; // For JS modal
     public $whatsappTemplates = [];    // List templates
-    public array $messageStatuses = []; // Cached status lookup for rendered messages
 
     public function mount()
     {
@@ -137,20 +135,6 @@ class WhatsAppChatCenter extends Component
                 'trace' => $e->getTraceAsString(),
             ]);
         }
-    }
-
-    public function getMessageStatuses(): void
-    {
-        $statuses = [];
-
-        foreach ($this->messages as $message) {
-            $status = WhatsAppStatusTracker::getStatusForMessage($message->id);
-            if ($status) {
-                $statuses[$message->id] = $status;
-            }
-        }
-
-        $this->messageStatuses = $statuses;
     }
 
     /**
@@ -299,20 +283,6 @@ class WhatsAppChatCenter extends Component
                 'error' => $e->getMessage(),
             ]);
         }
-    }
-
-    public function messageStatus(WhatsAppMessage $message): ?array
-    {
-        $status = $this->messageStatuses[$message->id] ?? null;
-
-        return match ($status) {
-            'pending'   => ['icon' => '⏱️', 'color' => '#6b7280'],
-            'sent'      => ['icon' => '✓', 'color' => '#6b7280'],
-            'delivered' => ['icon' => '✓✓', 'color' => '#6b7280'],
-            'read'      => ['icon' => '✓✓', 'color' => '#2563eb'],
-            'failed'    => ['icon' => '✗', 'color' => '#dc2626'],
-            default     => null,
-        };
     }
 
     /**

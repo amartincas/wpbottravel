@@ -126,7 +126,7 @@
                     </div>
 
                     {{-- Messages --}}
-                    <div id="chat-container" wire:poll.3s="getMessageStatuses" style="flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+                    <div id="chat-container" wire:poll.3s style="flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
                         @foreach ($messages as $message)
                             @php
                                 // Estilos por rol
@@ -147,14 +147,6 @@
                                     <p style="font-size: 14px; margin: 0; word-wrap: break-word; white-space: pre-wrap; color: #111827;">{{ $message->content }}</p>
                                     <div style="display: flex; justify-content: flex-end; gap: 0.5rem; align-items: center; margin-top: 4px;">
                                         <span style="font-size: 10px; color: #6b7280;">{{ $message->created_at->format('H:i') }}</span>
-                                        @php
-                                            $status = $this->messageStatus($message);
-                                        @endphp
-                                        @if($status)
-                                            <span style="font-size: 10px; color: {{ $status['color'] }};">
-                                                {{ $status['icon'] }}
-                                            </span>
-                                        @endif
                                     </div>
                                 </div>
                             </div>
