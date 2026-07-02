@@ -71,10 +71,19 @@ class WhatsAppController extends Controller
 
             if ($wamid && $status) {
                 WhatsAppStatusTracker::setStatusForWamid($wamid, $status);
-                Log::info('WhatsApp status event processed', [
-                    'wamid' => $wamid,
-                    'status' => $status,
-                ]);
+
+                if ($status === 'failed' && !empty($statusEvent['errors'])) {
+                    Log::warning('WhatsApp status event: message FAILED', [
+                        'wamid' => $wamid,
+                        'status' => $status,
+                        'errors' => $statusEvent['errors'],
+                    ]);
+                } else {
+                    Log::info('WhatsApp status event processed', [
+                        'wamid' => $wamid,
+                        'status' => $status,
+                    ]);
+                }
             }
         }
 
