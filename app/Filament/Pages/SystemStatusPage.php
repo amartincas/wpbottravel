@@ -94,32 +94,92 @@ class SystemStatusPage extends Page
         ];
     }
 
+    /**
+     * delivery_status guarda el ÚLTIMO estado que reportó Meta para cada
+     * mensaje (sent -> delivered -> read se van SOBRESCRIBIENDO). Por eso
+     * esto NO es un embudo acumulado ("de los enviados, cuántos llegaron a
+     * entregados") sino una foto del estado FINAL de cada mensaje: un
+     * mensaje que llegó a "leído" ya no cuenta como "entregado" ni
+     * "enviado", cuenta solo en "leído".
+     */
     protected function checkRecentDeliveries(): array
     {
         $since = now()->subDay();
 
-        $counts = WhatsAppMessage::where('created_at', '>=', $since)
-            ->whereNotNull('delivery_status')
+        $outboundRoles = ['assistant', 'system'];
+
+        $withWamid = WhatsAppMessage::where('created_at', '>=', $since)->whereNotNull('wamid');
+
+        $total = (clone $withWamid)->count();
+
+        $counts = (clone $withWamid)
             ->selectRaw('delivery_status, count(*) as total')
             ->groupBy('delivery_status')
-            ->pluck('total', 'delivery_status');
+            ->get()
+            ->mapWithKeys(fn ($row) => [$row->delivery_status ?? 'awaiting' => $row->total]);
+
+        // Mensajes que ni siquiera lograron generar un wamid: la llamada a la
+        // API de Meta falló por completo (token inválido, timeout, etc.) —
+        // hoy invisibles en los contadores de arriba porque nunca llegan a
+        // tener delivery_status.
+        $apiSendFailures = WhatsAppMessage::where('created_at', '>=', $since)
+            ->whereIn('role', $outboundRoles)
+            ->whereNull('wamid')
+            ->count();
 
         return [
-            'sent' => (int) ($counts['sent'] ?? 0),
-            'delivered' => (int) ($counts['delivered'] ?? 0),
+            'total' => $total,
             'read' => (int) ($counts['read'] ?? 0),
+            'deliveredOnly' => (int) ($counts['delivered'] ?? 0),
+            'sentOnly' => (int) ($counts['sent'] ?? 0),
+            'awaitingStatus' => (int) ($counts['awaiting'] ?? 0),
             'failed' => (int) ($counts['failed'] ?? 0),
+            'apiSendFailures' => $apiSendFailures,
         ];
     }
 
     protected function recentFailures()
     {
-        return WhatsAppMessage::with('store:id,name')
-            ->where('delivery_status', 'failed')
+        $metaRejected = WhatsAppMessage::where('delivery_status', 'failed')
             ->where('created_at', '>=', now()->subDays(2))
-            ->latest()
-            ->limit(10)
-            ->get(['id', 'store_id', 'customer_phone', 'content', 'delivery_error', 'created_at']);
+            ->get(['id', 'store_id', 'customer_phone', 'content', 'delivery_error', 'created_at'])
+            ->map(fn ($m) => [
+                'tipo' => 'Rechazado por Meta',
+                'store_id' => $m->store_id,
+                'customer_phone' => $m->customer_phone,
+                'content' => $m->content,
+                'reason' => $this->formatMetaError($m->delivery_error),
+                'created_at' => $m->created_at,
+            ]);
+
+        $apiFailed = WhatsAppMessage::whereIn('role', ['assistant', 'system'])
+            ->whereNull('wamid')
+            ->where('created_at', '>=', now()->subDays(2))
+            ->get(['id', 'store_id', 'customer_phone', 'content', 'created_at'])
+            ->map(fn ($m) => [
+                'tipo' => 'Fallo al enviar (API)',
+                'store_id' => $m->store_id,
+                'customer_phone' => $m->customer_phone,
+                'content' => $m->content,
+                'reason' => 'La llamada a la API de Meta no llegó a completarse — revisar logs.',
+                'created_at' => $m->created_at,
+            ]);
+
+        $storeNames = \App\Models\Store::pluck('name', 'id');
+
+        return $metaRejected->concat($apiFailed)
+            ->sortByDesc('created_at')
+            ->take(10)
+            ->map(fn ($row) => array_merge($row, [
+                'store_name' => $storeNames[$row['store_id']] ?? "#{$row['store_id']}",
+            ]));
+    }
+
+    protected function formatMetaError(?string $deliveryError): string
+    {
+        $decoded = json_decode($deliveryError ?? '[]', true);
+
+        return $decoded[0]['title'] ?? $decoded[0]['message'] ?? ($deliveryError ?? 'Motivo desconocido');
     }
 
     protected function getHeaderActions(): array
