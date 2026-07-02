@@ -13,6 +13,9 @@ class WhatsAppMessage extends Model
         'customer_phone',
         'role',
         'content',
+        'wamid',
+        'delivery_status',
+        'delivery_error',
     ];
 
     /**

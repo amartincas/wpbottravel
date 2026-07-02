@@ -72,17 +72,30 @@ class WhatsAppController extends Controller
             if ($wamid && $status) {
                 WhatsAppStatusTracker::setStatusForWamid($wamid, $status);
 
+                $trackedMessage = \App\Models\WhatsAppMessage::where('wamid', $wamid)->first();
+
                 if ($status === 'failed' && !empty($statusEvent['errors'])) {
                     Log::warning('WhatsApp status event: message FAILED', [
                         'wamid' => $wamid,
                         'status' => $status,
                         'errors' => $statusEvent['errors'],
                     ]);
+
+                    if ($trackedMessage && $trackedMessage->delivery_status !== 'failed') {
+                        $trackedMessage->update([
+                            'delivery_status' => 'failed',
+                            'delivery_error' => json_encode($statusEvent['errors']),
+                        ]);
+
+                        $this->alertSuperAdminsOfDeliveryFailure($trackedMessage, $statusEvent['errors']);
+                    }
                 } else {
                     Log::info('WhatsApp status event processed', [
                         'wamid' => $wamid,
                         'status' => $status,
                     ]);
+
+                    $trackedMessage?->update(['delivery_status' => $status]);
                 }
             }
         }
@@ -1063,6 +1076,54 @@ private function handleRestaurantButtonResponse(
 
         Log::warning('CUSTOMER_ROUTING: No se pudo resolver el restaurante para este mensaje', [
             'from' => $fromPhone,
+        ]);
+    }
+
+    /**
+     * Notifica por WhatsApp a los superadmins cuando Meta reporta que un
+     * mensaje saliente NO se pudo entregar (a un cliente, a un restaurante,
+     * o una actualización de estado de pedido). Throttled por mensaje: solo
+     * se alerta la primera vez que ese wamid se marca como fallido.
+     */
+    private function alertSuperAdminsOfDeliveryFailure(\App\Models\WhatsAppMessage $message, array $errors): void
+    {
+        $superAdmins = \App\Models\User::where('is_super_admin', true)
+            ->whereNotNull('whatsapp')
+            ->get();
+
+        if ($superAdmins->isEmpty()) {
+            return;
+        }
+
+        $anyStore = Store::query()->first();
+        if (!$anyStore) {
+            return;
+        }
+
+        $store = Store::find($message->store_id);
+        $reason = $errors[0]['title'] ?? $errors[0]['message'] ?? 'Motivo desconocido';
+        $preview = mb_strimwidth($message->content ?? '', 0, 100, '…');
+
+        $alertText = "⚠️ *Mensaje de WhatsApp NO entregado*\n"
+            . "Restaurante: " . ($store?->name ?? "#{$message->store_id}") . "\n"
+            . "Para: {$message->customer_phone}\n"
+            . "Contenido: \"{$preview}\"\n"
+            . "Motivo (Meta): {$reason}";
+
+        foreach ($superAdmins as $admin) {
+            \App\Services\WhatsAppService::sendMessage(
+                to: $admin->whatsapp,
+                message: $alertText,
+                store: $anyStore,
+            );
+        }
+
+        Log::info('DELIVERY_ALERT: Superadmins notificados de mensaje fallido', [
+            'message_id' => $message->id,
+            'store_id' => $message->store_id,
+            'to' => $message->customer_phone,
+            'reason' => $reason,
+            'alerted_admins' => $superAdmins->pluck('id')->all(),
         ]);
     }
 

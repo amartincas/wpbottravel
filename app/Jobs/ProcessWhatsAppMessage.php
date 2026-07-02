@@ -668,12 +668,22 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 ];
             }
 
+            // Registrar el envío para poder rastrear su entrega (delivery_status
+            // se actualiza cuando llega el status callback de Meta con el wamid).
+            $notifyMessage = WhatsAppMessage::create([
+                'store_id' => $this->store->id,
+                'customer_phone' => $this->store->store_whatsapp,
+                'role' => 'system',
+                'content' => "Notificación de pedido #{$lead->id} enviada al restaurante ({$this->store->store_order_template})",
+            ]);
+
             $sent = WhatsAppService::sendTemplateMessage(
                 to: $this->store->store_whatsapp,
                 templateName: $this->store->store_order_template,
                 languageCode: $this->store->store_order_template_lang ?? 'es_CO',
                 variables: $variables,
                 store: $this->store,
+                messageId: $notifyMessage->id,
             );
 
             if ($sent) {

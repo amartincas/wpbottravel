@@ -48,6 +48,7 @@ class WhatsAppService
             $wamid = data_get($response->json(), 'messages.0.id');
             if ($response->successful() && $messageId !== null && $wamid) {
                 WhatsAppStatusTracker::trackWamid($messageId, $wamid);
+                \App\Models\WhatsAppMessage::whereKey($messageId)->update(['wamid' => $wamid]);
             }
 
             Log::debug('WhatsApp message sent', [
@@ -182,6 +183,7 @@ class WhatsAppService
             $wamid = data_get($response->json(), 'messages.0.id');
             if ($response->successful() && $messageId !== null && $wamid) {
                 WhatsAppStatusTracker::trackWamid($messageId, $wamid);
+                \App\Models\WhatsAppMessage::whereKey($messageId)->update(['wamid' => $wamid]);
             }
 
             // Log detailed Meta error before the generic failure check,
