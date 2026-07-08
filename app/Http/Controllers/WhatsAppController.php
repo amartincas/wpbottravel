@@ -205,11 +205,15 @@ class WhatsAppController extends Controller
                 ['last_session_at' => now()]
             )->update(['last_session_at' => now()]);
 
+            $coverageGateMessage = "¡Hola! 👋 Antes de continuar, ¿podrías compartir tu ubicación de WhatsApp (📎 → Ubicación → Compartir ubicación actual)? Así confirmamos que llegamos a tu zona.";
+
             \App\Services\WhatsAppService::sendMessage(
                 to:      $fromPhone,
-                message: "¡Hola! 👋 Antes de continuar, ¿podrías compartir tu ubicación de WhatsApp (📎 → Ubicación → Compartir ubicación actual)? Así confirmamos que llegamos a tu zona.",
+                message: $coverageGateMessage,
                 store:   $store,
             );
+
+            $this->saveMessage($store, $fromPhone, 'assistant', $coverageGateMessage);
 
             Log::info('COVERAGE_GATE: Mensaje bloqueado — esperando confirmación de cobertura', [
                 'store_id' => $store->id,
@@ -354,6 +358,12 @@ class WhatsAppController extends Controller
         ]);
 
         if ($lat && $lng) {
+            $this->saveMessage(
+                $store,
+                $fromPhone,
+                'user',
+                "📍 Ubicación compartida: {$lat},{$lng}" . ($address || $name ? " — " . ($address ?? $name) : '')
+            );
             // =====================================================
             // VALIDACIÓN DE COBERTURA
             // Si el store tiene bounding box configurado,
@@ -369,11 +379,15 @@ class WhatsAppController extends Controller
                     'lng'      => $lng,
                 ]);
 
+                $noCoverageMessage = "Lo sentimos 😔 Por ahora no tenemos cobertura en tu zona. Esperamos llegar pronto a tu ubicación.";
+
                 \App\Services\WhatsAppService::sendMessage(
                     to:      $fromPhone,
-                    message: "Lo sentimos 😔 Por ahora no tenemos cobertura en tu zona. Esperamos llegar pronto a tu ubicación.",
+                    message: $noCoverageMessage,
                     store:   $store,
                 );
+
+                $this->saveMessage($store, $fromPhone, 'assistant', $noCoverageMessage);
 
                 return response('EVENT_RECEIVED', 200);
             }
@@ -387,11 +401,15 @@ class WhatsAppController extends Controller
             // Primera vez que se confirma cobertura para este cliente —
             // avisarle explícitamente antes de que la IA retome la conversación.
             if ($coverageResult === true && !$wasAlreadyConfirmed) {
+                $coverageConfirmedMessage = "✅ ¡Sí tenemos cobertura en tu zona! Continuemos con tu pedido.";
+
                 \App\Services\WhatsAppService::sendMessage(
                     to:      $fromPhone,
-                    message: "✅ ¡Sí tenemos cobertura en tu zona! Continuemos con tu pedido.",
+                    message: $coverageConfirmedMessage,
                     store:   $store,
                 );
+
+                $this->saveMessage($store, $fromPhone, 'assistant', $coverageConfirmedMessage);
             }
 
             // Guardar coordenadas en el lead más reciente del cliente
@@ -478,11 +496,15 @@ class WhatsAppController extends Controller
 
                 // El cliente sigue esperando alguna confirmación aunque no pase
                 // por la IA — sin esto, el chat queda en silencio total.
+                $locationAckMessage = "📍 ¡Recibimos tu ubicación! Ya la registramos en tu pedido #{$activeLead->id}.";
+
                 \App\Services\WhatsAppService::sendMessage(
                     to:      $fromPhone,
-                    message: "📍 ¡Recibimos tu ubicación! Ya la registramos en tu pedido #{$activeLead->id}.",
+                    message: $locationAckMessage,
                     store:   $store,
                 );
+
+                $this->saveMessage($store, $fromPhone, 'assistant', $locationAckMessage);
 
                 return response('EVENT_RECEIVED', 200);
             }
