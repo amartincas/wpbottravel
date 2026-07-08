@@ -205,6 +205,15 @@ class WhatsAppController extends Controller
                 ['last_session_at' => now()]
             )->update(['last_session_at' => now()]);
 
+            // Guardar lo que escribió el cliente aunque el mensaje se bloquee
+            // — si no, cualquier cosa que escriba mientras espera compartir
+            // ubicación (ej. "Buenos", "Cali") queda invisible en el chat.
+            $blockedContent = match ($type) {
+                'text'  => $message['text']['body'] ?? '(mensaje de texto)',
+                default => "(mensaje tipo: {$type})",
+            };
+            $this->saveMessage($store, $fromPhone, 'user', $blockedContent);
+
             $coverageGateMessage = "¡Hola! 👋 Antes de continuar, ¿podrías compartir tu ubicación de WhatsApp (📎 → Ubicación → Compartir ubicación actual)? Así confirmamos que llegamos a tu zona.";
 
             \App\Services\WhatsAppService::sendMessage(
