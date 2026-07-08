@@ -1356,9 +1356,29 @@ private function handleRestaurantButtonResponse(
     /**
      * Responde cuando no fue posible identificar el restaurante (sin match de
      * producto ni conversación reciente) — no se despacha el Job de IA.
+     *
+     * Corta-circuito anti-bucle: si este número lleva varios intentos fallidos
+     * seguidos, es casi seguro que "quien" escribe es otro bot automatizado
+     * (no un cliente real) contestándole a nuestro propio mensaje de fallback,
+     * y responderle de nuevo solo perpetúa un ping-pong infinito entre los dos
+     * bots. Tras el límite, nos quedamos en silencio hasta que expire la
+     * ventana en vez de seguir alimentando el bucle.
      */
     private function replyCannotResolveStore(string $fromPhone): void
     {
+        $loopKey = "unresolved_reply_count:{$fromPhone}";
+        $replyCount = Cache::get($loopKey, 0);
+
+        if ($replyCount >= 3) {
+            Log::warning('CUSTOMER_ROUTING: Posible bucle bot-a-bot detectado — silenciado temporalmente', [
+                'from'        => $fromPhone,
+                'reply_count' => $replyCount,
+            ]);
+            return;
+        }
+
+        Cache::put($loopKey, $replyCount + 1, now()->addMinutes(10));
+
         $anyStore = Store::query()->first();
         if (!$anyStore) {
             return;
@@ -1371,7 +1391,8 @@ private function handleRestaurantButtonResponse(
         );
 
         Log::warning('CUSTOMER_ROUTING: No se pudo resolver el restaurante para este mensaje', [
-            'from' => $fromPhone,
+            'from'        => $fromPhone,
+            'reply_count' => $replyCount + 1,
         ]);
     }
 
