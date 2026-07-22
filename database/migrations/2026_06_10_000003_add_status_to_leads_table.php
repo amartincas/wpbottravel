@@ -12,7 +12,7 @@ return new class extends Migration
             $table->string('status', 30)
                   ->default('pendiente')
                   ->after('total_amount')
-                  ->comment('Estado: pendiente, aceptado, en_preparacion, listo, entregado, cancelado');
+                  ->comment('Estado: pendiente, derivado, cerrado, cancelado');
         });
     }
 

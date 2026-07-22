@@ -13,7 +13,7 @@ return new class extends Migration
             $table->foreignId('store_id')->constrained()->cascadeOnDelete();
             $table->string('customer_phone');
             $table->string('customer_name')->nullable();
-            $table->text('delivery_address_or_location')->nullable();
+            $table->text('meeting_point')->nullable();
             $table->string('product_service_name')->nullable();
             $table->string('preferred_date_time')->nullable();
             $table->text('summary');

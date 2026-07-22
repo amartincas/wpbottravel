@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Leads\Schemas;
 
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -25,36 +26,32 @@ class LeadForm
                     ->tel()
                     ->required()
                     ->columnSpan(2),
-                Textarea::make('delivery_address_or_location')
-                    ->label('Dirección de Entrega')
+                Textarea::make('meeting_point')
+                    ->label('Punto de Encuentro / Referencia')
                     ->rows(3)
                     ->columnSpanFull(),
-                TextInput::make('location')
-                    ->label('Coordenadas GPS')
-                    ->placeholder('3.4516,-76.5320')
-                    ->helperText('Coordenadas enviadas por el cliente via WhatsApp (lat,lng)')
-                    ->columnSpanFull(),
+                DatePicker::make('tour_date')
+                    ->label('Fecha del Tour')
+                    ->columnSpan(2),
                 TextInput::make('product_service_name')
-                    ->label('Producto / Servicio')
+                    ->label('Tour / Servicio')
                     ->columnSpan(2),
                 TextInput::make('total_amount')
                     ->label('Valor Total')
-                    ->helperText('Valor total del pedido incluyendo extras')
+                    ->helperText('Valor total de la reserva incluyendo extras')
                     ->columnSpan(2),
                 Select::make('status')
-                    ->label('Estado del Pedido')
+                    ->label('Estado de la Reserva')
                     ->options([
-                        Lead::STATUS_PENDIENTE      => '⏳ Pendiente',
-                        Lead::STATUS_ACEPTADO       => '✅ Aceptado',
-                        Lead::STATUS_LISTO          => '📦 Listo',
-                        Lead::STATUS_DESPACHADO     => '🚚 Despachado',
-                        Lead::STATUS_ENTREGADO      => '🎉 Entregado',
-                        Lead::STATUS_CANCELADO      => '❌ Cancelado',
+                        Lead::STATUS_PENDIENTE => '⏳ Pendiente',
+                        Lead::STATUS_DERIVADO  => '🧑‍💼 Derivado a asesor',
+                        Lead::STATUS_CERRADO   => '🎉 Cerrado',
+                        Lead::STATUS_CANCELADO => '❌ Cancelado',
                     ])
                     ->default(Lead::STATUS_PENDIENTE)
                     ->columnSpan(2),
                 Textarea::make('summary')
-                    ->label('Resumen del Pedido')
+                    ->label('Resumen de la Reserva')
                     ->rows(4)
                     ->required()
                     ->columnSpanFull(),

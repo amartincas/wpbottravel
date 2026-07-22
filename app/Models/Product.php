@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'name',
     'description',
     'price',
-    'store_price',
+    'cost_price',
     'stock',
     'type',
     'ai_sales_strategy',
@@ -29,7 +29,7 @@ class Product extends Model
     {
         return [
             'price'       => 'decimal:2',
-            'store_price' => 'decimal:2',
+            'cost_price'  => 'decimal:2',
             'stock'       => 'integer',
             'type'        => 'string',
             'meta_ad_ids' => 'array',
@@ -88,7 +88,7 @@ class Product extends Model
      */
     public function getMargin(): float
     {
-        if (!$this->store_price) return 0;
-        return (float) $this->price - (float) $this->store_price;
+        if (!$this->cost_price) return 0;
+        return (float) $this->price - (float) $this->cost_price;
     }
 }

@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'product_id',
     'name',
     'description',
-    'restaurant_price',
+    'cost_price',
     'sale_price',
     'is_available',
     'sort_order',
@@ -23,7 +23,7 @@ class ProductExtra extends Model
     protected function casts(): array
     {
         return [
-            'restaurant_price' => 'decimal:2',
+            'cost_price'       => 'decimal:2',
             'sale_price'       => 'decimal:2',
             'is_available'     => 'boolean',
         ];

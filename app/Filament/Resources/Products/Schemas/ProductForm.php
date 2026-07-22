@@ -55,11 +55,11 @@ class ProductForm
                     ->prefix('$')
                     ->helperText('Precio que se cobra al cliente'),
 
-                TextInput::make('store_price')
-                    ->label('Precio Restaurante')
+                TextInput::make('cost_price')
+                    ->label('Precio Costo')
                     ->numeric()
                     ->prefix('$')
-                    ->helperText('Precio que se paga al restaurante por este producto'),
+                    ->helperText('Precio que se paga al operador/proveedor por este tour o producto'),
 
                 ToggleButtons::make('type')
                     ->options([
@@ -92,18 +92,18 @@ class ProductForm
 
                 Textarea::make('faq_context')
                     ->label('FAQ & Operational Context')
-                    ->placeholder('Rules, cities served, employees, FAQs specific to this product...')
+                    ->placeholder('Rules, cities/destinations covered, guides, FAQs specific to this tour...')
                     ->columnSpanFull(),
 
                 TextInput::make('required_customer_info')
                     ->label('Required Lead Data')
-                    ->placeholder('E.g., Full name, phone, delivery address...')
+                    ->placeholder('E.g., Full name, phone, meeting point, tour date...')
                     ->columnSpanFull(),
 
                 TagsInput::make('meta_ad_ids')
                     ->label('IDs de anuncios de Meta (Click-to-WhatsApp)')
                     ->placeholder('Pega el ID del anuncio y presiona Enter')
-                    ->helperText('Copia el ID del anuncio desde Meta Ads Manager (no el texto del mensaje). Así, cuando un cliente escriba desde ese anuncio, el sistema identifica el restaurante correcto aunque el mensaje prellenado no coincida exactamente con el nombre del producto.')
+                    ->helperText('Copia el ID del anuncio desde Meta Ads Manager (no el texto del mensaje). Así, cuando un cliente escriba desde ese anuncio, el sistema identifica el operador correcto aunque el mensaje prellenado no coincida exactamente con el nombre del producto.')
                     ->columnSpanFull(),
 
                 // =====================================================
@@ -115,13 +115,13 @@ class ProductForm
                     ->schema([
                         TextInput::make('name')
                             ->label('Nombre')
-                            ->placeholder('Ej: Guacamole extra')
+                            ->placeholder('Ej: Seguro de viaje')
                             ->required()
                             ->columnSpan(2),
 
                         Textarea::make('description')
                             ->label('Descripción')
-                            ->placeholder('Ej: Porción adicional de guacamole fresco')
+                            ->placeholder('Ej: Cobertura médica adicional durante el tour')
                             ->rows(2)
                             ->columnSpanFull(),
 
@@ -132,12 +132,12 @@ class ProductForm
                             ->required()
                             ->helperText('Precio que se cobra al cliente'),
 
-                        TextInput::make('restaurant_price')
-                            ->label('Precio Restaurante')
+                        TextInput::make('cost_price')
+                            ->label('Precio Costo')
                             ->numeric()
                             ->prefix('$')
                             ->required()
-                            ->helperText('Precio que se paga al restaurante'),
+                            ->helperText('Precio que se paga al operador/proveedor'),
 
                         Toggle::make('is_available')
                             ->label('Disponible')

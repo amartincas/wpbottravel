@@ -9,17 +9,17 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('products', function (Blueprint $table) {
-            $table->decimal('store_price', 10, 2)
+            $table->decimal('cost_price', 10, 2)
                   ->nullable()
                   ->after('price')
-                  ->comment('Precio que se paga al restaurante por este producto');
+                  ->comment('Precio de costo que se paga al operador/proveedor por este tour o producto');
         });
     }
 
     public function down(): void
     {
         Schema::table('products', function (Blueprint $table) {
-            $table->dropColumn('store_price');
+            $table->dropColumn('cost_price');
         });
     }
 };

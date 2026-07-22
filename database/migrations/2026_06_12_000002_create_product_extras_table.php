@@ -14,12 +14,12 @@ return new class extends Migration
                   ->constrained('products')
                   ->onDelete('cascade');
             $table->string('name', 100)
-                  ->comment('Nombre del extra. Ej: Guacamole extra');
+                  ->comment('Nombre del extra. Ej: Seguro de viaje, transporte adicional');
             $table->text('description')
                   ->nullable()
                   ->comment('Descripción del extra');
-            $table->decimal('restaurant_price', 10, 2)
-                  ->comment('Precio que se paga al restaurante por este extra');
+            $table->decimal('cost_price', 10, 2)
+                  ->comment('Precio de costo que se paga al operador/proveedor por este extra');
             $table->decimal('sale_price', 10, 2)
                   ->comment('Precio que se cobra al cliente por este extra');
             $table->boolean('is_available')

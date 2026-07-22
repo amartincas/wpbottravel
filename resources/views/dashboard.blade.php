@@ -37,7 +37,7 @@
                         ⚠️ <strong>Platform WhatsApp/AI Configuration Required</strong>
                     </p>
                     <p class="text-sm text-yellow-700 mt-1">
-                        The shared WhatsApp number and/or AI credentials are not configured yet. No restaurant can receive messages until this is set.
+                        The shared WhatsApp number and/or AI credentials are not configured yet. No store can receive messages until this is set.
                     </p>
                     <a href="{{ route('filament.admin.pages.whatsapp-platform-settings') }}" class="inline-block mt-2 bg-yellow-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-yellow-700">
                         Go to Platform Settings

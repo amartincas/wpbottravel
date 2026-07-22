@@ -454,7 +454,7 @@ Extract customer information from this conversation.
 Return ONLY valid JSON with these fields (use null for missing values):
 {
   "customer_name": "string or null",
-  "delivery_address_or_location": "string or null",
+  "meeting_point": "string or null",
   "product_service_name": "string or null",
   "preferred_date_time": "string or null"
 }
@@ -472,7 +472,7 @@ PROMPT;
         $extracted = json_decode($extractionResponse, true, flags: JSON_THROW_ON_ERROR);
         return [
             'customer_name' => $extracted['customer_name'] ?? null,
-            'delivery_address_or_location' => $extracted['delivery_address_or_location'] ?? null,
+            'meeting_point' => $extracted['meeting_point'] ?? null,
             'product_service_name' => $extracted['product_service_name'] ?? null,
             'preferred_date_time' => $extracted['preferred_date_time'] ?? null,
         ];
@@ -493,7 +493,7 @@ private function extractLeadDataRegex(): array
     // Find phone numbers, addresses, dates
     preg_match('/(?:phone|celular|tel)[:\s]*([0-9\-\+\s]{10,})/i', 
         $this->messageBody, $matches);
-    $data['delivery_address_or_location'] = $matches[1] ?? null;
+    $data['meeting_point'] = $matches[1] ?? null;
 
     // Find dates (YYYY-MM-DD, DD/MM, etc.)
     preg_match('/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/', 
@@ -513,7 +513,7 @@ private function extractLeadDataRegex(): array
 
     return array_merge([
         'customer_name' => null,
-        'delivery_address_or_location' => null,
+        'meeting_point' => null,
         'product_service_name' => null,
         'preferred_date_time' => null,
     ], array_filter($data, fn($v) => $v !== null));
@@ -535,7 +535,7 @@ private function shouldCreateLeadFromResponse(
     }
 
     // Heuristic: Check if we have sufficient extracted data
-    $requiredFields = ['customer_name', 'delivery_address_or_location'];
+    $requiredFields = ['customer_name', 'meeting_point'];
     $filledFields = array_filter($leadData, fn($v) => $v !== null);
 
     // Require at least 2 fields to create lead implicitly
@@ -561,7 +561,7 @@ if ($shouldCreateLead) {
         'store_id' => $this->store->id,
         'customer_phone' => $this->from,
         'customer_name' => $leadData['customer_name'] ?? null,
-        'delivery_address_or_location' => $leadData['delivery_address_or_location'] ?? null,
+        'meeting_point' => $leadData['meeting_point'] ?? null,
         'product_service_name' => $leadData['product_service_name'] ?? null,
         'preferred_date_time' => $leadData['preferred_date_time'] ?? null,
         'summary' => $messageToSend,
@@ -886,7 +886,7 @@ if ($extractedFieldCount < 2) {
     if (empty($leadData['customer_name'])) {
         $missingPrompt .= "- Your full name\n";
     }
-    if (empty($leadData['delivery_address_or_location'])) {
+    if (empty($leadData['meeting_point'])) {
         $missingPrompt .= "- Your delivery address\n";
     }
     if (empty($leadData['preferred_date_time'])) {
@@ -1566,7 +1566,7 @@ $ php artisan cache:clear
 
 #### **Scenario 1: Null Extractions in Lead Generation**
 
-**Problem:** Leads are created with `customer_name = null`, `delivery_address_or_location = null`
+**Problem:** Leads are created with `customer_name = null`, `meeting_point = null`
 
 **Root Cause Analysis:**
 
@@ -1585,7 +1585,7 @@ Log::channel('production')->debug('LEAD_EXTRACTION_DEBUG', [
 | Cause | Symptom | Fix |
 |-------|---------|-----|
 | Customer never provided name | `customer_name = null` | Re-prompt customer before creating lead |
-| AI response doesn't mention address | `delivery_address_or_location = null` | Ensure system prompt asks for address before lead completion |
+| AI response doesn't mention address | `meeting_point = null` | Ensure system prompt asks for address before lead completion |
 | Regex fails on non-standard format | Address exists but not extracted | Update regex patterns to handle local address formats |
 | JSON parsing error in extraction | All fields = null | Add fallback to regex extraction (already implemented) |
 
@@ -1610,7 +1610,7 @@ public function shouldCreateLeadFromResponse(
             $this->from,
             "To complete your request, I need:\n"
             . ($leadData['customer_name'] === null ? "- Your full name\n" : "")
-            . ($leadData['delivery_address_or_location'] === null ? "- Your delivery address\n" : ""),
+            . ($leadData['meeting_point'] === null ? "- Your meeting point\n" : ""),
             $this->store
         );
 

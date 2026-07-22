@@ -55,7 +55,7 @@ class ProductFinderService
             $products = Product::where('store_id', $storeId)
                 ->with(['images', 'availableExtras'])
                 ->limit($limit)
-                ->get(['id', 'name', 'price', 'store_price', 'description', 'stock', 'type', 'ai_sales_strategy', 'faq_context', 'required_customer_info']);
+                ->get(['id', 'name', 'price', 'cost_price', 'description', 'stock', 'type', 'ai_sales_strategy', 'faq_context', 'required_customer_info']);
         } else {
             // Specific search query - use LIKE with wildcards
             $searchTerm = "%{$query}%";
@@ -83,7 +83,7 @@ class ProductFinderService
                 })
                 ->with(['images', 'availableExtras'])
                 ->limit($limit)
-                ->get(['id', 'name', 'price', 'store_price', 'description', 'stock', 'type', 'ai_sales_strategy', 'faq_context', 'required_customer_info']);
+                ->get(['id', 'name', 'price', 'cost_price', 'description', 'stock', 'type', 'ai_sales_strategy', 'faq_context', 'required_customer_info']);
 
             Log::info("PRODUCT_FINDER: Search result count", [
                 'store_id' => $storeId,
@@ -101,7 +101,7 @@ class ProductFinderService
                 $products = Product::where('store_id', $storeId)
                     ->with(['images', 'availableExtras'])
                     ->limit($limit)
-                    ->get(['id', 'name', 'price', 'store_price', 'description', 'stock', 'type', 'ai_sales_strategy', 'faq_context', 'required_customer_info']);
+                    ->get(['id', 'name', 'price', 'cost_price', 'description', 'stock', 'type', 'ai_sales_strategy', 'faq_context', 'required_customer_info']);
 
                 Log::info("PRODUCT_FINDER: Fallback catalog result", [
                     'store_id' => $storeId,
@@ -132,7 +132,7 @@ class ProductFinderService
      * Resolve which store a customer message belongs to by matching product
      * names contained within the message text, across ALL stores.
      *
-     * Used when the WhatsApp number is shared across every restaurant, so the
+     * Used when the WhatsApp number is shared across every operator, so the
      * store can no longer be identified from Meta's phone_number_id.
      *
      * Direction matters: this checks whether a product's (short) name is

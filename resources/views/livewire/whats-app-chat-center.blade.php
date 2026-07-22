@@ -133,7 +133,7 @@
                                 $roleConfig = match($message->role) {
                                     'user'       => ['justify' => 'flex-start', 'bg' => '#ffffff', 'label' => '👤 Cliente',     'labelColor' => '#6b7280'],
                                     'assistant'  => ['justify' => 'flex-end',   'bg' => '#dcf8c6', 'label' => '🤖 Bot',          'labelColor' => '#059669'],
-                                    'restaurant' => ['justify' => 'flex-start', 'bg' => '#fef3c7', 'label' => '🏪 Restaurante',  'labelColor' => '#d97706'],
+                                    'advisor'    => ['justify' => 'flex-start', 'bg' => '#fef3c7', 'label' => '🧑‍💼 Asesor',      'labelColor' => '#d97706'],
                                     'system'     => ['justify' => 'flex-end',   'bg' => '#ede9fe', 'label' => '🔔 Sistema',      'labelColor' => '#7c3aed'],
                                     default      => ['justify' => 'flex-end',   'bg' => '#f3f4f6', 'label' => $message->role,    'labelColor' => '#6b7280'],
                                 };

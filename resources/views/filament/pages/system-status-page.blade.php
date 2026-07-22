@@ -83,7 +83,7 @@
                             <tr class="border-b text-xs text-gray-500 dark:text-gray-400">
                                 <th class="py-2 pr-4">Fecha</th>
                                 <th class="py-2 pr-4">Tipo</th>
-                                <th class="py-2 pr-4">Restaurante</th>
+                                <th class="py-2 pr-4">Negocio</th>
                                 <th class="py-2 pr-4">Para</th>
                                 <th class="py-2 pr-4">Contenido</th>
                                 <th class="py-2 pr-4">Motivo</th>

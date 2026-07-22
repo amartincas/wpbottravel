@@ -18,32 +18,32 @@ return new class extends Migration
                   ->nullable()
                   ->after('product_name')
                   ->comment('Precio de venta del producto en el momento de la venta');
-            $table->decimal('product_store_price', 10, 2)
+            $table->decimal('product_cost_price', 10, 2)
                   ->nullable()
                   ->after('product_sale_price')
-                  ->comment('Precio del restaurante en el momento de la venta');
+                  ->comment('Precio de costo del operador en el momento de la venta');
 
             // Snapshot de extras
             $table->json('extras_detail')
                   ->nullable()
-                  ->after('product_store_price')
+                  ->after('product_cost_price')
                   ->comment('JSON con extras seleccionados y sus precios en el momento de la venta');
             $table->decimal('extras_sale_total', 10, 2)
                   ->nullable()
                   ->default(0)
                   ->after('extras_detail')
                   ->comment('Suma de precios de venta de los extras');
-            $table->decimal('extras_store_total', 10, 2)
+            $table->decimal('extras_cost_total', 10, 2)
                   ->nullable()
                   ->default(0)
                   ->after('extras_sale_total')
-                  ->comment('Suma de precios del restaurante de los extras');
+                  ->comment('Suma de precios de costo de los extras');
 
             // Observaciones del cliente
             $table->text('comments')
                   ->nullable()
-                  ->after('extras_store_total')
-                  ->comment('Observaciones del cliente. Ej: Sin cebolla por favor');
+                  ->after('extras_cost_total')
+                  ->comment('Observaciones del cliente sobre la reserva');
         });
     }
 
@@ -53,10 +53,10 @@ return new class extends Migration
             $table->dropColumn([
                 'product_name',
                 'product_sale_price',
-                'product_store_price',
+                'product_cost_price',
                 'extras_detail',
                 'extras_sale_total',
-                'extras_store_total',
+                'extras_cost_total',
                 'comments',
             ]);
         });

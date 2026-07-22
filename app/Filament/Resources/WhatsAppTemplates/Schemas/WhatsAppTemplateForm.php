@@ -61,7 +61,7 @@ class WhatsAppTemplateForm
 
             Textarea::make('body_preview')
                 ->label('Vista Previa del Cuerpo')
-                ->placeholder('Ej: Hola {{1}}, tu pedido {{2}} ha sido enviado.')
+                ->placeholder('Ej: Hola {{1}}, tenemos un nuevo interesado en {{2}}.')
                 ->helperText('Texto de referencia para los operadores. Usa {{1}}, {{2}}, etc. Este campo NO se envia a Meta.')
                 ->rows(4)
                 ->required()
@@ -72,7 +72,7 @@ class WhatsAppTemplateForm
                 ->label('Mapa de Parametros')
                 ->keyLabel('Numero de Posicion (ej: 1, 2, 3)')
                 ->valueLabel('Campo del Lead o Etiqueta Manual')
-                ->helperText('La clave es el numero del marcador {{N}}. El valor es el campo del lead (ej: customer_name, product_name, customer_phone).')
+                ->helperText('La clave es el numero del marcador {{N}}. El valor es el campo del lead (ej: customer_name, product_service_name, customer_phone).')
                 ->addActionLabel('+ Agregar parametro')
                 ->reorderable()
                 ->columnSpanFull(),

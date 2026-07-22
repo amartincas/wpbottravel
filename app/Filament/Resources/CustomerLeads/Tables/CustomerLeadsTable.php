@@ -82,7 +82,7 @@ class CustomerLeadsTable
                     ->placeholder('Sin compras'),
 
                 TextColumn::make('store.name')
-                    ->label('Restaurante')
+                    ->label('Operador')
                     ->sortable()
                     ->visible(fn () => Auth::user()?->is_super_admin),
             ])
@@ -97,7 +97,7 @@ class CustomerLeadsTable
                     ->options(CustomerLeadSource::options()),
 
                 SelectFilter::make('store_id')
-                    ->label('Restaurante')
+                    ->label('Operador')
                     ->relationship('store', 'name')
                     ->visible(fn () => Auth::user()?->is_super_admin),
             ])

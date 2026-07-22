@@ -11,15 +11,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'store_id',
     'customer_phone',
     'customer_name',
-    'delivery_address_or_location',
-    'location',
+    'meeting_point',
+    'tour_date',
     'product_service_name',
     'product_name',
     'product_sale_price',
-    'product_store_price',
+    'product_cost_price',
     'extras_detail',
     'extras_sale_total',
-    'extras_store_total',
+    'extras_cost_total',
     'comments',
     'total_amount',
     'status',
@@ -31,33 +31,25 @@ class Lead extends Model
 {
     use HasFactory;
 
-    const STATUS_PENDIENTE   = 'pendiente';
-    const STATUS_ACEPTADO    = 'aceptado';
-    const STATUS_LISTO       = 'listo';
-    const STATUS_DESPACHADO  = 'despachado';
-    const STATUS_ENTREGADO   = 'entregado';
-    const STATUS_CANCELADO   = 'cancelado';
+    const STATUS_PENDIENTE = 'pendiente';
+    const STATUS_DERIVADO  = 'derivado';
+    const STATUS_CERRADO   = 'cerrado';
+    const STATUS_CANCELADO = 'cancelado';
 
     const STATUS_MAP = [
-        'aceptado'   => self::STATUS_ACEPTADO,
-        'accepted'   => self::STATUS_ACEPTADO,
-        'listo'      => self::STATUS_LISTO,
-        'ready'      => self::STATUS_LISTO,
-        'despachado' => self::STATUS_DESPACHADO,
-        'shipped'    => self::STATUS_DESPACHADO,
-        'entregado'  => self::STATUS_ENTREGADO,
-        'delivered'  => self::STATUS_ENTREGADO,
-        'cancelado'  => self::STATUS_CANCELADO,
-        'cancelled'  => self::STATUS_CANCELADO,
-        'canceled'   => self::STATUS_CANCELADO,
+        'derivado'  => self::STATUS_DERIVADO,
+        'referred'  => self::STATUS_DERIVADO,
+        'cerrado'   => self::STATUS_CERRADO,
+        'closed'    => self::STATUS_CERRADO,
+        'cancelado' => self::STATUS_CANCELADO,
+        'cancelled' => self::STATUS_CANCELADO,
+        'canceled'  => self::STATUS_CANCELADO,
     ];
 
     const STATUS_MESSAGES = [
-        self::STATUS_ACEPTADO   => '✅ ¡Buenas noticias! El restaurante recibió tu pedido y ya inició la preparación. Te avisamos cuando esté listo.',
-        self::STATUS_LISTO      => '📦 ¡Tu pedido está listo! Ya salió para entrega.',
-        self::STATUS_DESPACHADO => '🚚 Tu pedido ha sido despachado y está en camino.',
-        self::STATUS_ENTREGADO  => '🎉 ¡Tu pedido fue entregado! Gracias por tu compra. ¡Que lo disfrutes!',
-        self::STATUS_CANCELADO  => '❌ Tu pedido fue cancelado. Si tienes dudas, escríbenos y te ayudamos.',
+        self::STATUS_DERIVADO  => '✅ ¡Gracias por tu interés! Un asesor te contactará en breve para confirmar los detalles y el pago de tu reserva.',
+        self::STATUS_CERRADO   => '🎉 ¡Tu reserva quedó confirmada! Gracias por elegirnos. ¡Que disfrutes tu experiencia!',
+        self::STATUS_CANCELADO => '❌ Tu reserva fue cancelada. Si tienes dudas, escríbenos y te ayudamos.',
     ];
 
     protected function casts(): array
@@ -66,10 +58,11 @@ class Lead extends Model
             'is_processed'       => 'boolean',
             'bot_active'         => 'boolean',
             'extras_detail'      => 'array',
+            'tour_date'          => 'date',
             'product_sale_price' => 'decimal:2',
-            'product_store_price'=> 'decimal:2',
+            'product_cost_price' => 'decimal:2',
             'extras_sale_total'  => 'decimal:2',
-            'extras_store_total' => 'decimal:2',
+            'extras_cost_total'  => 'decimal:2',
         ];
     }
 
@@ -109,13 +102,13 @@ class Lead extends Model
 
     /**
      * Calcula el margen bruto de este lead.
-     * Margen = total_amount - product_store_price - extras_store_total
+     * Margen = total_amount - product_cost_price - extras_cost_total
      */
     public function getMargin(): float
     {
-        $total       = (float) preg_replace('/[^0-9.]/', '', $this->total_amount ?? '0');
-        $storeCost   = (float) ($this->product_store_price ?? 0);
-        $extrasCost  = (float) ($this->extras_store_total ?? 0);
-        return $total - $storeCost - $extrasCost;
+        $total      = (float) preg_replace('/[^0-9.]/', '', $this->total_amount ?? '0');
+        $cost       = (float) ($this->product_cost_price ?? 0);
+        $extrasCost = (float) ($this->extras_cost_total ?? 0);
+        return $total - $cost - $extrasCost;
     }
 }

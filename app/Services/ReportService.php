@@ -76,10 +76,10 @@ class ReportService
     }
 
     /**
-     * Reporte para el restaurante.
-     * Solo muestra sus propios pedidos.
+     * Reporte para el operador/asesor.
+     * Solo muestra sus propias reservas.
      */
-    public static function restaurantReport(int $storeId, Carbon $from, Carbon $to, string $label): string
+    public static function operatorReport(int $storeId, Carbon $from, Carbon $to, string $label): string
     {
         $leads = Lead::where('store_id', $storeId)
             ->whereBetween('created_at', [
@@ -90,20 +90,20 @@ class ReportService
 
         $total      = $leads->count();
         $ventas     = $leads->sum(fn ($l) => (float) preg_replace('/[^0-9.]/', '', $l->total_amount ?? '0'));
-        $entregados = $leads->where('status', Lead::STATUS_ENTREGADO)->count();
+        $cerrados   = $leads->where('status', Lead::STATUS_CERRADO)->count();
         $cancelados = $leads->where('status', Lead::STATUS_CANCELADO)->count();
-        $pendientes = $leads->whereNotIn('status', [Lead::STATUS_ENTREGADO, Lead::STATUS_CANCELADO])->count();
+        $derivados  = $leads->whereNotIn('status', [Lead::STATUS_CERRADO, Lead::STATUS_CANCELADO])->count();
 
         if ($total === 0) {
-            return "📊 Reporte: {$label}\n\nNo se encontraron pedidos en este período.";
+            return "📊 Reporte: {$label}\n\nNo se encontraron reservas en este período.";
         }
 
         $lines = [
             "📊 *Reporte: {$label}*",
             "",
-            "📦 Pedidos totales: {$total}",
-            "✅ Entregados: {$entregados}",
-            "⏳ En proceso: {$pendientes}",
+            "📋 Reservas totales: {$total}",
+            "✅ Cerrados: {$cerrados}",
+            "🧑‍💼 Derivados a asesor: {$derivados}",
             "❌ Cancelados: {$cancelados}",
             "💰 Ventas: $" . number_format($ventas, 0, ',', '.'),
         ];
@@ -116,7 +116,7 @@ class ReportService
 
         if ($topProducts->isNotEmpty()) {
             $lines[] = "";
-            $lines[] = "🍗 *Productos más pedidos:*";
+            $lines[] = "🧭 *Tours más solicitados:*";
             foreach ($topProducts as $product => $count) {
                 $lines[] = "  • " . ($product ?: 'Sin especificar') . ": {$count}";
             }
@@ -160,34 +160,34 @@ class ReportService
 
             $total      = $leads->count();
             $ventas     = $leads->sum(fn ($l) => (float) preg_replace('/[^0-9.]/', '', $l->total_amount ?? '0'));
-            $entregados = $leads->where('status', Lead::STATUS_ENTREGADO)->count();
+            $cerrados   = $leads->where('status', Lead::STATUS_CERRADO)->count();
             $cancelados = $leads->where('status', Lead::STATUS_CANCELADO)->count();
-            $pendientes = $leads->whereNotIn('status', [Lead::STATUS_ENTREGADO, Lead::STATUS_CANCELADO])->count();
+            $derivados  = $leads->whereNotIn('status', [Lead::STATUS_CERRADO, Lead::STATUS_CANCELADO])->count();
 
             // Acumular globales
             $globalTotal      += $total;
             $globalVentas     += $ventas;
-            $globalEntregados += $entregados;
+            $globalEntregados += $cerrados;
             $globalCancelados += $cancelados;
             $globalClientes   = $globalClientes->merge($leads->pluck('customer_phone'));
 
             $lines[] = "🏪 *{$store->name}*";
-            $lines[] = "  📦 Pedidos: {$total} | 💰 $" . number_format($ventas, 0, ',', '.');
-            $lines[] = "  ✅ Entregados: {$entregados} | ⏳ En proceso: {$pendientes} | ❌ Cancelados: {$cancelados}";
+            $lines[] = "  📋 Reservas: {$total} | 💰 $" . number_format($ventas, 0, ',', '.');
+            $lines[] = "  ✅ Cerrados: {$cerrados} | 🧑‍💼 Derivados: {$derivados} | ❌ Cancelados: {$cancelados}";
             $lines[] = "";
         }
 
         if ($globalTotal === 0) {
-            return "📊 Reporte Admin: {$label}\n\nNo se encontraron pedidos en este período.";
+            return "📊 Reporte Admin: {$label}\n\nNo se encontraron reservas en este período.";
         }
 
         $ticketProm     = $globalTotal > 0 ? $globalVentas / $globalTotal : 0;
         $clientesUnicos = $globalClientes->unique()->count();
 
         $lines[] = "━━━━━━━━━━━━━━━";
-        $lines[] = "📦 Total pedidos: {$globalTotal}";
+        $lines[] = "📋 Total reservas: {$globalTotal}";
         $lines[] = "💰 Ventas totales: $" . number_format($globalVentas, 0, ',', '.');
-        $lines[] = "✅ Entregados: {$globalEntregados} | ❌ Cancelados: {$globalCancelados}";
+        $lines[] = "✅ Cerrados: {$globalEntregados} | ❌ Cancelados: {$globalCancelados}";
         $lines[] = "🎯 Ticket promedio: $" . number_format($ticketProm, 0, ',', '.');
         $lines[] = "👥 Clientes únicos: {$clientesUnicos}";
 

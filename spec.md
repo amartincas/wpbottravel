@@ -1,4 +1,4 @@
-# Project Spec: WhatsApp AI Multi-Store Orchestrator
+# Project Spec: WhatsApp AI Multi-Operator Tour Booking Orchestrator
 
 ## 1. Tech Stack
 - **Framework:** Laravel 11 (PHP 8.3)

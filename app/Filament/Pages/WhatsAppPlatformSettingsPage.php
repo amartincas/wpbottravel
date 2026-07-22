@@ -54,7 +54,7 @@ class WhatsAppPlatformSettingsPage extends Page implements HasForms
                 Placeholder::make('webhook_url')
                     ->label('Webhook URL')
                     ->content(fn () => rtrim(config('app.url'), '/') . '/api/whatsapp/webhook')
-                    ->helperText('Una sola URL para todos los restaurantes — cópiala en Meta Developers Console > Webhook Settings > Callback URL.')
+                    ->helperText('Una sola URL para todos los operadores — cópiala en Meta Developers Console > Webhook Settings > Callback URL.')
                     ->columnSpanFull(),
 
                 TextInput::make('wa_phone_number_id')

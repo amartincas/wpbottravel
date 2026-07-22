@@ -40,7 +40,6 @@ class ProcessWhatsAppMessage implements ShouldQueue
         public ?string $messageType = null,
         public ?string $mediaId = null,
         public ?int $productContext = null,
-        public bool $coveragePending = false,
     ) {}
 
     /**
@@ -198,14 +197,14 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 ->reverse()
                 ->map(function (WhatsAppMessage $msg) {
                     // OpenAI solo acepta: user, assistant, system, tool, function
-                    // Mapeamos restaurant y system (BD) a roles válidos para la IA.
+                    // Mapeamos advisor y system (BD) a roles válidos para la IA.
                     // El contenido se prefija para que la IA entienda el contexto.
                     switch ($msg->role) {
-                        case 'restaurant':
-                            // Mensaje del restaurante — tratarlo como usuario externo
+                        case 'advisor':
+                            // Mensaje del asesor — tratarlo como usuario externo
                             return [
                                 'role'    => 'user',
-                                'content' => '[Restaurante]: ' . $msg->content,
+                                'content' => '[Asesor]: ' . $msg->content,
                             ];
                         case 'system':
                             // Notificación automática del sistema — tratarla como respuesta del bot
@@ -264,9 +263,9 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 ]);
             }
             
-            // 4. Contexto del pedido activo del cliente (Sprint 2)
+            // 4. Contexto de la reserva activa del cliente
             // Se consulta en cada mensaje para que la IA siempre tenga
-            // el estado más reciente cuando el cliente pregunte por su pedido.
+            // el estado más reciente cuando el cliente pregunte por su reserva.
             $activeLead = \App\Models\Lead::where('store_id', $this->store->id)
                 ->where('customer_phone', $this->from)
                 ->latest()
@@ -274,24 +273,23 @@ class ProcessWhatsAppMessage implements ShouldQueue
 
             if ($activeLead) {
                 $statusLabels = [
-                    \App\Models\Lead::STATUS_PENDIENTE   => 'Pendiente de confirmación del restaurante',
-                    \App\Models\Lead::STATUS_ACEPTADO    => 'Aceptado — el restaurante está preparando el pedido',
-                    \App\Models\Lead::STATUS_LISTO       => 'Listo — el pedido está listo para despacho',
-                    \App\Models\Lead::STATUS_DESPACHADO  => 'Despachado — el pedido está en camino',
-                    \App\Models\Lead::STATUS_ENTREGADO   => 'Entregado',
-                    \App\Models\Lead::STATUS_CANCELADO   => 'Cancelado',
+                    \App\Models\Lead::STATUS_PENDIENTE => 'Pendiente — todavía estamos reuniendo los datos de tu reserva',
+                    \App\Models\Lead::STATUS_DERIVADO  => 'Derivado — un asesor va a contactarte para confirmar el pago y los detalles',
+                    \App\Models\Lead::STATUS_CERRADO   => 'Cerrado — tu reserva quedó confirmada',
+                    \App\Models\Lead::STATUS_CANCELADO => 'Cancelado',
                 ];
 
                 $statusLabel = $statusLabels[$activeLead->status] ?? $activeLead->status;
 
-                $systemPrompt .= "\n\n### PEDIDO ACTIVO DEL CLIENTE:\n";
-                $systemPrompt .= "Pedido #" . $activeLead->id . "\n";
-                $systemPrompt .= "Producto: " . ($activeLead->product_service_name ?? 'N/A') . "\n";
+                $systemPrompt .= "\n\n### RESERVA ACTIVA DEL CLIENTE:\n";
+                $systemPrompt .= "Reserva #" . $activeLead->id . "\n";
+                $systemPrompt .= "Tour/Servicio: " . ($activeLead->product_service_name ?? 'N/A') . "\n";
                 $systemPrompt .= "Total: " . ($activeLead->total_amount ? '$' . number_format((float) preg_replace('/[^0-9.]/', '', $activeLead->total_amount), 0, ',', '.') : 'N/A') . "\n";
-                $systemPrompt .= "Dirección: " . ($activeLead->delivery_address_or_location ?? 'N/A') . "\n";
+                $systemPrompt .= "Punto de encuentro: " . ($activeLead->meeting_point ?? 'N/A') . "\n";
+                $systemPrompt .= "Fecha del tour: " . ($activeLead->tour_date?->format('Y-m-d') ?? 'N/A') . "\n";
                 $systemPrompt .= "Estado actual: " . $statusLabel . "\n";
                 $systemPrompt .= "Última actualización: " . $activeLead->updated_at->format('Y-m-d H:i') . "\n";
-                $systemPrompt .= "\nSi el cliente pregunta por su pedido, responde ÚNICAMENTE con el estado registrado arriba. Nunca inventes estados ni tiempos de entrega.\n";
+                $systemPrompt .= "\nSi el cliente pregunta por su reserva, responde ÚNICAMENTE con el estado registrado arriba. Nunca inventes estados ni fechas de contacto del asesor.\n";
 
                 Log::info('ACTIVE_LEAD_CONTEXT: Inyectado en prompt', [
                     'store_id' => $this->store->id,
@@ -304,28 +302,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
             $systemPrompt .= "\n\n### SYSTEM METADATA:\n";
             $systemPrompt .= "Current Date/Time: " . now()->format('Y-m-d H:i:s') . "\n";
             $systemPrompt .= "Lead Completion Signal: [LEAD_COMPLETE]\n";
-            $systemPrompt .= "ONLY append [LEAD_COMPLETE] when the customer has EXPLICITLY confirmed the order with a clear affirmative response (sí, confirmo, correcto, acepto, listo, dale, de acuerdo) AFTER you have shown the full order summary. Never emit this token before showing the summary. Never emit this token more than once per conversation unless the customer explicitly places a NEW and SEPARATE order after the previous one was already confirmed.\n";
-
-            // El cliente todavía no ha compartido su ubicación GPS (gate de
-            // cobertura pendiente) — puede seguir preguntando (precio, menú,
-            // si hay cobertura en su ciudad, etc.) y hay que responderle con
-            // normalidad, pero SIN tomar el pedido en firme todavía.
-            if ($this->coveragePending) {
-                $systemPrompt .= "\n### COBERTURA PENDIENTE DE CONFIRMAR:\n";
-                $systemPrompt .= "El cliente aún no ha compartido su ubicación GPS de WhatsApp, así que no hemos confirmado si llegamos a su zona. Responde con normalidad cualquier pregunta (precio, menú, ciudad, etc.), pero NO muestres el resumen final del pedido ni emitas [LEAD_COMPLETE] todavía.\n";
-
-                if ($this->store->hasCoverage()) {
-                    // Cobertura por zonas (bounding box), no toda la ciudad —
-                    // aclarar esto explícitamente para no prometer cobertura
-                    // total donde solo hay sectores cubiertos.
-                    $systemPrompt .= "Si pregunta si hacen domicilios en su ciudad, responde que SÍ tienen domicilios ahí, pero aclara que la cobertura es por sectores específicos de la ciudad, no en toda — por eso es necesario que comparta su ubicación exacta para confirmar si su dirección puntual queda dentro de la zona cubierta.\n";
-                } else {
-                    $systemPrompt .= "Este restaurante no tiene zonas de cobertura configuradas por sectores, así que puedes responder preguntas de ciudad/domicilio con la información disponible en el catálogo o reglas del negocio, sin necesidad de aclarar sectores.\n";
-                }
-
-                $systemPrompt .= "Después de responder su pregunta, recuérdale amablemente compartir su ubicación (📎 → Ubicación → Compartir ubicación actual) para poder confirmar cobertura y continuar con el pedido.\n";
-                $systemPrompt .= "VERIFICACIÓN OBLIGATORIA ANTES DE CERRAR EL PEDIDO: antes de emitir [LEAD_COMPLETE] o decir cualquier frase que suene a confirmación (pedido confirmado, registrado, en preparación, en camino), pregúntate: ¿ya tengo la ubicación GPS de este cliente? Como este mensaje te dice que la respuesta es NO, no puedes emitir el token ni confirmar el pedido todavía — en su lugar, pídesela explícitamente indicando que la necesitas para validar que llegamos a su zona antes de continuar.\n";
-            }
+            $systemPrompt .= "ONLY append [LEAD_COMPLETE] when the customer has EXPLICITLY confirmed they want to move forward with the booking and are ready to be connected with an advisor to close payment (sí, confirmo, correcto, acepto, listo, dale, de acuerdo) AFTER you have shown the full booking summary. Never emit this token before showing the summary. Never emit this token more than once per conversation unless the customer explicitly starts a NEW and SEPARATE booking after the previous one was already confirmed.\n";
 
             // Get the configured AI service for this store
             $aiEngine = AIServiceFactory::make($this->store);
@@ -345,25 +322,6 @@ class ProcessWhatsAppMessage implements ShouldQueue
 
             $hasLeadToken = strpos($aiResponse, '[LEAD_COMPLETE]') !== false;
 
-            // Red de seguridad: sin importar lo que haga la IA, el pedido no
-            // se puede cerrar mientras la ubicación no esté confirmada — es
-            // un requisito duro para que el restaurante sepa que llega a la
-            // dirección del cliente. Esto cubre tanto el token explícito
-            // como una confirmación en texto natural (ej. "tu pedido está
-            // confirmado 🎉") sin el token — si dejáramos pasar ese texto
-            // tal cual, el cliente creería que su pedido va en camino
-            // cuando el restaurante nunca lo recibió.
-            if ($this->coveragePending && ($hasLeadToken || $this->isLeadCompletionResponse($aiResponse))) {
-                Log::warning('Confirmación de pedido bloqueada — ubicación aún no confirmada', [
-                    'store_id' => $this->store->id,
-                    'customer_phone' => $this->from,
-                    'had_token' => $hasLeadToken,
-                ]);
-
-                $aiResponse = "📍 Antes de confirmar tu pedido, necesito que compartas tu ubicación de WhatsApp (📎 → Ubicación → Compartir ubicación actual) para verificar que llegamos a tu zona.";
-                $hasLeadToken = false;
-            }
-
             $messageToSend = $aiResponse;
 
             // Extract lead data from the conversation for both explicit and fallback detection
@@ -375,13 +333,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
             // varios turnos después de que el cliente los mencionó.
             $leadData = $this->mergeAndCacheOrderDraft($leadData);
 
-            // Con la ubicación aún pendiente, nunca se crea el Lead — ni
-            // siquiera por la detección heurística de frases tipo "pedido
-            // confirmado" que la IA pudo haber escrito antes de que le
-            // quitáramos el token [LEAD_COMPLETE] arriba.
-            $shouldCreateLead = $this->coveragePending
-                ? false
-                : $this->shouldCreateLeadFromResponse($aiResponse, $leadData, $hasLeadToken);
+            $shouldCreateLead = $this->shouldCreateLeadFromResponse($aiResponse, $leadData, $hasLeadToken);
 
             if ($shouldCreateLead) {
                 if ($hasLeadToken) {
@@ -399,41 +351,27 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 // Resolver snapshot de precios desde la BD
                 $snapshot = $this->resolveOrderSnapshot($leadData);
 
-                // Si el cliente ya compartió su ubicación antes de que existiera
-                // este pedido (ej. verificación de cobertura al inicio), la
-                // recogemos aquí para que la notificación al restaurante ya
-                // incluya el mapa desde el primer mensaje.
-                $pendingLocationKey = "pending_customer_location:{$this->store->id}:{$this->from}";
-                $pendingLocation = Cache::pull($pendingLocationKey);
-
                 $lead = Lead::create([
-                    'store_id'                     => $this->store->id,
-                    'customer_phone'               => $this->from,
-                    'customer_name'                => $leadData['customer_name'] ?? null,
-                    'delivery_address_or_location' => $leadData['delivery_address_or_location'] ?? null,
-                    'product_service_name'         => $leadData['product_service_name'] ?? null,
-                    'product_name'                 => $snapshot['product_name'],
-                    'product_sale_price'           => $snapshot['product_sale_price'],
-                    'product_store_price'          => $snapshot['product_store_price'],
-                    'extras_detail'                => $snapshot['extras_detail'],
-                    'extras_sale_total'            => $snapshot['extras_sale_total'],
-                    'extras_store_total'           => $snapshot['extras_store_total'],
-                    'comments'                     => $leadData['comments'] ?? null,
-                    'total_amount'                 => $leadData['total_amount'] ?? null,
-                    'summary'                      => $messageToSend,
-                    'is_processed'                 => false,
-                    'location'                     => $pendingLocation,
+                    'store_id'              => $this->store->id,
+                    'customer_phone'        => $this->from,
+                    'customer_name'         => $leadData['customer_name'] ?? null,
+                    'meeting_point'         => $leadData['meeting_point'] ?? null,
+                    'tour_date'             => $leadData['tour_date'] ?? null,
+                    'product_service_name'  => $leadData['product_service_name'] ?? null,
+                    'product_name'          => $snapshot['product_name'],
+                    'product_sale_price'    => $snapshot['product_sale_price'],
+                    'product_cost_price'    => $snapshot['product_cost_price'],
+                    'extras_detail'         => $snapshot['extras_detail'],
+                    'extras_sale_total'     => $snapshot['extras_sale_total'],
+                    'extras_cost_total'     => $snapshot['extras_cost_total'],
+                    'comments'              => $leadData['comments'] ?? null,
+                    'total_amount'          => $leadData['total_amount'] ?? null,
+                    'summary'               => $messageToSend,
+                    'is_processed'          => false,
                 ]);
 
-                if ($pendingLocation) {
-                    Log::info('LOCATION_ATTACHED: Ubicación pendiente adjuntada al nuevo Lead', [
-                        'lead_id' => $lead->id,
-                        'location' => $pendingLocation,
-                    ]);
-                }
-
-                // Pedido finalizado — limpiar el acumulado para que el próximo
-                // pedido de este cliente empiece desde cero.
+                // Reserva finalizada — limpiar el acumulado para que la próxima
+                // reserva de este cliente empiece desde cero.
                 Cache::forget("order_draft:{$this->store->id}:{$this->from}");
 
                 Log::info('Lead created from WhatsApp conversation', [
@@ -444,8 +382,8 @@ class ProcessWhatsAppMessage implements ShouldQueue
                     'completion_method' => $hasLeadToken ? 'explicit_token' : 'heuristic_fallback',
                 ]);
 
-                // Sprint 1: Notificación automática al restaurante
-                $this->notifyRestaurant($lead, $leadData);
+                // Notificación automática al asesor para que cierre el pago/reserva
+                $this->notifyAdvisor($lead, $leadData);
 
                 // CRM: Registrar pedido en CustomerLead
                 $this->registerOrderInCrm($lead, $leadData);
@@ -525,14 +463,14 @@ class ProcessWhatsAppMessage implements ShouldQueue
      * Handle a job failure.
      */
     /**
-     * Envía notificación de nuevo pedido al WhatsApp del restaurante.
-     * Usa plantilla Meta (HSM) porque el restaurante no inicia conversación.
+     * Envía notificación de nuevo lead al WhatsApp del asesor.
+     * Usa plantilla Meta (HSM) porque el asesor no inicia conversación.
      *
      * Variables de la plantilla:
-     *   {{1}} nombre del restaurante
+     *   {{1}} nombre del asesor/agencia
      *   {{2}} lead_id
      *   {{3}} customer_name
-     *   {{4}} delivery_address_or_location
+     *   {{4}} meeting_point
      *   {{5}} customer_phone
      *   {{6}} product_service_name
      *   {{7}} total_amount
@@ -594,12 +532,12 @@ class ProcessWhatsAppMessage implements ShouldQueue
     private function resolveOrderSnapshot(array $leadData): array
     {
         $snapshot = [
-            'product_name'        => null,
-            'product_sale_price'  => null,
-            'product_store_price' => null,
-            'extras_detail'       => null,
-            'extras_sale_total'   => 0,
-            'extras_store_total'  => 0,
+            'product_name'       => null,
+            'product_sale_price' => null,
+            'product_cost_price' => null,
+            'extras_detail'      => null,
+            'extras_sale_total'  => 0,
+            'extras_cost_total'  => 0,
         ];
 
         $productName = $leadData['product_service_name'] ?? null;
@@ -616,19 +554,19 @@ class ProcessWhatsAppMessage implements ShouldQueue
             return $snapshot;
         }
 
-        $snapshot['product_name']        = $product->name;
-        $snapshot['product_sale_price']  = $product->price;
-        $snapshot['product_store_price'] = $product->store_price;
+        $snapshot['product_name']       = $product->name;
+        $snapshot['product_sale_price'] = $product->price;
+        $snapshot['product_cost_price'] = $product->cost_price;
 
         $orderExtras = $leadData['order_extras'] ?? null;
         if (!$orderExtras || $product->availableExtras->isEmpty()) {
             return $snapshot;
         }
 
-        $requestedExtras  = array_map('trim', explode(',', $orderExtras));
-        $extrasDetail     = [];
-        $extrasSaleTotal  = 0;
-        $extrasStoreTotal = 0;
+        $requestedExtras = array_map('trim', explode(',', $orderExtras));
+        $extrasDetail    = [];
+        $extrasSaleTotal = 0;
+        $extrasCostTotal = 0;
 
         foreach ($requestedExtras as $requestedName) {
             $extra = $product->availableExtras
@@ -636,22 +574,22 @@ class ProcessWhatsAppMessage implements ShouldQueue
                     || stripos($requestedName, $e->name) !== false);
 
             if ($extra) {
-                $extrasDetail[]    = [
-                    'name'             => $extra->name,
-                    'sale_price'       => (float) $extra->sale_price,
-                    'restaurant_price' => (float) $extra->restaurant_price,
+                $extrasDetail[]  = [
+                    'name'       => $extra->name,
+                    'sale_price' => (float) $extra->sale_price,
+                    'cost_price' => (float) $extra->cost_price,
                 ];
-                $extrasSaleTotal  += (float) $extra->sale_price;
-                $extrasStoreTotal += (float) $extra->restaurant_price;
+                $extrasSaleTotal += (float) $extra->sale_price;
+                $extrasCostTotal += (float) $extra->cost_price;
                 Log::info('SNAPSHOT: Extra resuelto', ['extra' => $extra->name, 'sale_price' => $extra->sale_price]);
             } else {
                 Log::warning('SNAPSHOT: Extra no encontrado en BD', ['requested' => $requestedName]);
             }
         }
 
-        $snapshot['extras_detail']      = !empty($extrasDetail) ? $extrasDetail : null;
-        $snapshot['extras_sale_total']  = $extrasSaleTotal;
-        $snapshot['extras_store_total'] = $extrasStoreTotal;
+        $snapshot['extras_detail']     = !empty($extrasDetail) ? $extrasDetail : null;
+        $snapshot['extras_sale_total'] = $extrasSaleTotal;
+        $snapshot['extras_cost_total'] = $extrasCostTotal;
 
         Log::info('SNAPSHOT: Resuelto', [
             'product'      => $snapshot['product_name'],
@@ -662,10 +600,10 @@ class ProcessWhatsAppMessage implements ShouldQueue
         return $snapshot;
     }
 
-    private function notifyRestaurant(Lead $lead, array $leadData): void
+    private function notifyAdvisor(Lead $lead, array $leadData): void
     {
-        if (!$this->store->hasRestaurantNotification()) {
-            Log::info('RESTAURANT_NOTIFY: Skipped — store_whatsapp or store_order_template not configured', [
+        if (!$this->store->hasAdvisorNotification()) {
+            Log::info('ADVISOR_NOTIFY: Skipped — advisor_whatsapp or advisor_notification_template not configured', [
                 'store_id' => $this->store->id,
             ]);
             return;
@@ -709,76 +647,55 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 $productForTemplate .= ' + ' . $leadData['order_extras'];
             }
 
-            // Variables según la plantilla configurada en el store
-            $templateName = $this->store->store_order_template;
-
-            if ($templateName === 'nuevo_pedido') {
-                // Plantilla original: {{5}} = Teléfono, {{6}} = Producto, {{7}} = Valor
-                $variables = [
-                    $this->store->name,
-                    (string) $lead->id,
-                    $leadData['customer_name'] ?? 'N/A',
-                    $leadData['delivery_address_or_location'] ?? 'N/A',
-                    $this->from,
-                    $productForTemplate,
-                    $valor,
-                ];
-            } else {
-                // Plantilla nueva (pedido_nuevo): {{5}} = Producto, {{6}} = Valor, {{7}} = Ubicación
-                if (!empty($lead->location)) {
-                    [$lat, $lng] = explode(',', $lead->location);
-                    $ubicacion = "https://maps.google.com/?q={$lat},{$lng}";
-                } else {
-                    $ubicacion = 'No compartida';
-                }
-
-                $variables = [
-                    $this->store->name,
-                    (string) $lead->id,
-                    $leadData['customer_name'] ?? 'N/A',
-                    $leadData['delivery_address_or_location'] ?? 'N/A',
-                    $productForTemplate,
-                    $valor,
-                    $ubicacion,
-                ];
-            }
+            // Variables en el orden configurado en la plantilla del asesor:
+            // {{1}} store name  {{2}} lead_id  {{3}} customer_name
+            // {{4}} meeting_point  {{5}} phone  {{6}} product  {{7}} valor
+            $variables = [
+                $this->store->name,
+                (string) $lead->id,
+                $leadData['customer_name'] ?? 'N/A',
+                $leadData['meeting_point'] ?? 'N/A',
+                $this->from,
+                $productForTemplate,
+                $valor,
+            ];
 
             // Registrar el envío para poder rastrear su entrega (delivery_status
             // se actualiza cuando llega el status callback de Meta con el wamid).
             $notifyMessage = WhatsAppMessage::create([
                 'store_id' => $this->store->id,
-                'customer_phone' => $this->store->store_whatsapp,
+                'customer_phone' => $this->store->advisor_whatsapp,
                 'role' => 'system',
-                'content' => "Notificación de pedido #{$lead->id} enviada al restaurante ({$this->store->store_order_template})",
+                'content' => "Notificación de reserva #{$lead->id} enviada al asesor ({$this->store->advisor_notification_template})",
             ]);
 
             $sent = WhatsAppService::sendTemplateMessage(
-                to: $this->store->store_whatsapp,
-                templateName: $this->store->store_order_template,
-                languageCode: $this->store->store_order_template_lang ?? 'es_CO',
+                to: $this->store->advisor_whatsapp,
+                templateName: $this->store->advisor_notification_template,
+                languageCode: $this->store->advisor_notification_template_lang ?? 'es_CO',
                 variables: $variables,
                 store: $this->store,
                 messageId: $notifyMessage->id,
             );
 
             if ($sent) {
-                Log::info('RESTAURANT_NOTIFY: Pedido enviado al restaurante', [
-                    'store_id'   => $this->store->id,
-                    'lead_id'    => $lead->id,
-                    'restaurant' => $this->store->store_whatsapp,
-                    'template'   => $this->store->store_order_template,
-                    'valor'      => $valor,
+                Log::info('ADVISOR_NOTIFY: Reserva enviada al asesor', [
+                    'store_id' => $this->store->id,
+                    'lead_id'  => $lead->id,
+                    'advisor'  => $this->store->advisor_whatsapp,
+                    'template' => $this->store->advisor_notification_template,
+                    'valor'    => $valor,
                 ]);
             } else {
-                Log::warning('RESTAURANT_NOTIFY: Fallo al enviar pedido al restaurante', [
-                    'store_id'   => $this->store->id,
-                    'lead_id'    => $lead->id,
-                    'restaurant' => $this->store->store_whatsapp,
+                Log::warning('ADVISOR_NOTIFY: Fallo al enviar reserva al asesor', [
+                    'store_id' => $this->store->id,
+                    'lead_id'  => $lead->id,
+                    'advisor'  => $this->store->advisor_whatsapp,
                 ]);
             }
         } catch (\Exception $e) {
             // No relanzamos: fallo en notificación NO debe cancelar el job principal
-            Log::error('RESTAURANT_NOTIFY: Excepción al notificar restaurante', [
+            Log::error('ADVISOR_NOTIFY: Excepción al notificar asesor', [
                 'store_id' => $this->store->id,
                 'lead_id'  => $lead->id,
                 'error'    => $e->getMessage(),
@@ -1071,7 +988,8 @@ class ProcessWhatsAppMessage implements ShouldQueue
     {
         $leadData = [
             'customer_name' => null,
-            'delivery_address_or_location' => null,
+            'meeting_point' => null,
+            'tour_date' => null,
             'product_service_name' => null,
             'total_amount' => null,
             'order_extras' => null,
@@ -1094,11 +1012,12 @@ CRITICAL RULES FOR EXTRACTION:
 Return ONLY valid JSON (no markdown, no code blocks, no extra text):
 {
   "customer_name": "extracted name or null",
-  "delivery_address_or_location": "address or null",
+  "meeting_point": "meeting point / pickup reference the customer gave, or null",
+  "tour_date": "date of the tour/activity in YYYY-MM-DD format if the customer confirmed one, or null",
   "product_service_name": "CURRENT confirmed service only - not from earlier in conversation",
-  "total_amount": "total order value as plain number without symbols, e.g. 48900, or null if not confirmed",
+  "total_amount": "total booking value as plain number without symbols, e.g. 48900, or null if not confirmed",
   "order_extras": "comma separated list of extras the customer confirmed, exactly as named in the catalog, or null if none",
-  "comments": "any special instructions or observations from the customer about the order, e.g. no onion, extra sauce, or null if none"
+  "comments": "any special instructions or observations from the customer about the booking, or null if none"
 }
 
 CONVERSATION:
@@ -1148,7 +1067,7 @@ PROMPT;
                     // Usa la misma ventana de 6 mensajes que se le dio al extractor,
                     // no solo el turno actual — si no, un "sí, confirmo" final (que no
                     // repite el nombre del producto) invalida un producto ya confirmado
-                    // pocos turnos atrás y el pedido llega al restaurante como N/A.
+                    // pocos turnos atrás y la reserva llega al asesor como N/A.
                     $recentText = implode(' ', array_column($contextMessages, 'content'))
                         . ' ' . $this->messageBody . ' ' . $lastAiResponse;
 
@@ -1167,7 +1086,8 @@ PROMPT;
 
                 // Sanitize and validate each field
                 $leadData['customer_name'] = $this->sanitizeString($extracted['customer_name'] ?? null, 100);
-                $leadData['delivery_address_or_location'] = $this->sanitizeString($extracted['delivery_address_or_location'] ?? null, 255);
+                $leadData['meeting_point'] = $this->sanitizeString($extracted['meeting_point'] ?? null, 255);
+                $leadData['tour_date'] = $this->sanitizeString($extracted['tour_date'] ?? null, 20);
                 $leadData['product_service_name'] = $this->sanitizeString($extracted['product_service_name'] ?? null, 150);
                 $leadData['total_amount'] = $this->sanitizeString($extracted['total_amount'] ?? null, 50);
                 $leadData['order_extras'] = $this->sanitizeString($extracted['order_extras'] ?? null, 255);
@@ -1282,7 +1202,7 @@ PROMPT;
         $cached = Cache::get($draftKey, []);
 
         $merged = [];
-        foreach (['customer_name', 'delivery_address_or_location', 'product_service_name', 'total_amount', 'order_extras', 'comments'] as $field) {
+        foreach (['customer_name', 'meeting_point', 'tour_date', 'product_service_name', 'total_amount', 'order_extras', 'comments'] as $field) {
             $merged[$field] = !empty($freshData[$field]) ? $freshData[$field] : ($cached[$field] ?? null);
         }
 
@@ -1299,7 +1219,7 @@ PROMPT;
     {
         $leadData = [
             'customer_name' => null,
-            'delivery_address_or_location' => null,
+            'meeting_point' => null,
             'product_service_name' => null,
             'total_amount' => null,
         ];
@@ -1322,11 +1242,11 @@ PROMPT;
             }
         }
 
-        // Extract address
-        if (preg_match('/(?:address|location|at|deliver to|service at|located at)\s+([^,\.]*[,\.]|\b[A-Za-z0-9\s,]+(?:Road|Street|Ave|Boulevard|Lane|Drive|Court|District|City|Apt|Apartment|Suite|Block)[\w\s]*)/i', $allUserMessages, $matches)) {
+        // Extract meeting point
+        if (preg_match('/(?:address|location|at|meet at|pickup at|meeting point|located at)\s+([^,\.]*[,\.]|\b[A-Za-z0-9\s,]+(?:Road|Street|Ave|Boulevard|Lane|Drive|Court|District|City|Apt|Apartment|Suite|Block)[\w\s]*)/i', $allUserMessages, $matches)) {
             $address = trim($matches[1]);
             if (strlen($address) < 200) {
-                $leadData['delivery_address_or_location'] = preg_replace('/[,\.]+$/', '', $address);
+                $leadData['meeting_point'] = preg_replace('/[,\.]+$/', '', $address);
             }
         }
 
@@ -1383,14 +1303,14 @@ PROMPT;
      *
      * @param array $history Chat history with 'role' and 'content'
      *                       Includes both AI and human operator messages
-     * @return array Extracted lead data with keys: customer_name, delivery_address_or_location, product_service_name, preferred_date_time
+     * @return array Extracted lead data with keys: customer_name, meeting_point, product_service_name, total_amount
      * @deprecated Use extractLeadDataWithAI instead
      */
     private function extractLeadData(array $history): array
     {
         $leadData = [
             'customer_name' => null,
-            'delivery_address_or_location' => null,
+            'meeting_point' => null,
             'product_service_name' => null,
             'total_amount' => null,
         ];
@@ -1414,11 +1334,11 @@ PROMPT;
             }
         }
 
-        // Extract address - look for patterns indicating location/address
-        if (preg_match('/(?:address|location|at|deliver to|service at|located at)\s+([^,\.]*[,\.]|\b[A-Za-z0-9\s,]+(?:Road|Street|Ave|Boulevard|Lane|Drive|Court|District|City|Apt|Apartment|Suite|Block)[\w\s]*)/i', $allUserMessages, $matches)) {
+        // Extract meeting point - look for patterns indicating a location reference
+        if (preg_match('/(?:address|location|at|meet at|pickup at|meeting point|located at)\s+([^,\.]*[,\.]|\b[A-Za-z0-9\s,]+(?:Road|Street|Ave|Boulevard|Lane|Drive|Court|District|City|Apt|Apartment|Suite|Block)[\w\s]*)/i', $allUserMessages, $matches)) {
             $address = trim($matches[1]);
             if (strlen($address) < 200) { // Sanity check
-                $leadData['delivery_address_or_location'] = preg_replace('/[,\.]+$/', '', $address);
+                $leadData['meeting_point'] = preg_replace('/[,\.]+$/', '', $address);
             }
         }
 

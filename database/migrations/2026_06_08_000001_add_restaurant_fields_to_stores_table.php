@@ -9,20 +9,20 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('stores', function (Blueprint $table) {
-            $table->string('store_whatsapp', 20)
+            $table->string('advisor_whatsapp', 20)
                   ->nullable()
                   ->after('name')
-                  ->comment('Número WhatsApp del restaurante (con código de país, ej: 573001234567)');
+                  ->comment('Número WhatsApp del asesor que cierra la reserva (con código de país, ej: 573001234567)');
 
-            $table->string('store_order_template', 100)
+            $table->string('advisor_notification_template', 100)
                   ->nullable()
-                  ->after('store_whatsapp')
-                  ->comment('Nombre de la plantilla Meta aprobada para notificar pedidos al restaurante');
+                  ->after('advisor_whatsapp')
+                  ->comment('Nombre de la plantilla Meta aprobada para notificar nuevos leads al asesor');
 
-            $table->string('store_order_template_lang', 10)
+            $table->string('advisor_notification_template_lang', 10)
                   ->nullable()
                   ->default('es_CO')
-                  ->after('store_order_template')
+                  ->after('advisor_notification_template')
                   ->comment('Código de idioma de la plantilla Meta, ej: es_CO, en_US');
         });
     }
@@ -31,9 +31,9 @@ return new class extends Migration
     {
         Schema::table('stores', function (Blueprint $table) {
             $table->dropColumn([
-                'store_whatsapp',
-                'store_order_template',
-                'store_order_template_lang',
+                'advisor_whatsapp',
+                'advisor_notification_template',
+                'advisor_notification_template_lang',
             ]);
         });
     }
