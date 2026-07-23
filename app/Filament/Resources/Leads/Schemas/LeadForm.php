@@ -62,7 +62,7 @@ class LeadForm
                     ->label('Estado de la Reserva')
                     ->options([
                         Lead::STATUS_PENDIENTE => '⏳ Pendiente',
-                        Lead::STATUS_DERIVADO  => '🧑‍💼 Derivado a asesor',
+                        Lead::STATUS_ACEPTADO  => '✅ Aceptado por asesor',
                         Lead::STATUS_CERRADO   => '🎉 Cerrado',
                         Lead::STATUS_CANCELADO => '❌ Cancelado',
                     ])

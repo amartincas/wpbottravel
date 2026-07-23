@@ -287,7 +287,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
             if ($activeLead) {
                 $statusLabels = [
                     \App\Models\Lead::STATUS_PENDIENTE => 'Pendiente — todavía estamos reuniendo los datos de tu reserva',
-                    \App\Models\Lead::STATUS_DERIVADO  => 'Derivado — un asesor va a contactarte para confirmar el pago y los detalles',
+                    \App\Models\Lead::STATUS_ACEPTADO  => 'Aceptado — un asesor ya la revisó y va a contactarte para confirmar el pago y los detalles',
                     \App\Models\Lead::STATUS_CERRADO   => 'Cerrado — tu reserva quedó confirmada',
                     \App\Models\Lead::STATUS_CANCELADO => 'Cancelado',
                 ];

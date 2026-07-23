@@ -34,13 +34,15 @@ class Lead extends Model
     use HasFactory;
 
     const STATUS_PENDIENTE = 'pendiente';
-    const STATUS_DERIVADO  = 'derivado';
+    const STATUS_ACEPTADO  = 'aceptado';
     const STATUS_CERRADO   = 'cerrado';
     const STATUS_CANCELADO = 'cancelado';
 
     const STATUS_MAP = [
-        'derivado'  => self::STATUS_DERIVADO,
-        'referred'  => self::STATUS_DERIVADO,
+        'aceptado'  => self::STATUS_ACEPTADO,
+        'accepted'  => self::STATUS_ACEPTADO,
+        'derivado'  => self::STATUS_ACEPTADO,
+        'referred'  => self::STATUS_ACEPTADO,
         'cerrado'   => self::STATUS_CERRADO,
         'closed'    => self::STATUS_CERRADO,
         'cancelado' => self::STATUS_CANCELADO,
@@ -49,7 +51,10 @@ class Lead extends Model
     ];
 
     const STATUS_MESSAGES = [
-        self::STATUS_DERIVADO  => '✅ ¡Gracias por tu interés! Un asesor te contactará en breve para confirmar los detalles y el pago de tu reserva.',
+        // Se dispara cuando el asesor confirma con el botón/comando ACEPTADO
+        // (o sus sinónimos DERIVADO) — no repite la promesa que ya dio la IA
+        // al derivar el lead, confirma que un humano ya lo revisó.
+        self::STATUS_ACEPTADO  => '👀 ¡Tu asesor ya revisó tu información! Se pondrá en contacto contigo muy pronto para confirmar los detalles y el pago de tu reserva.',
         self::STATUS_CERRADO   => '🎉 ¡Tu reserva quedó confirmada! Gracias por elegirnos. ¡Que disfrutes tu experiencia!',
         self::STATUS_CANCELADO => '❌ Tu reserva fue cancelada. Si tienes dudas, escríbenos y te ayudamos.',
     ];

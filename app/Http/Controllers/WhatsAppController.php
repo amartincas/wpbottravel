@@ -371,7 +371,7 @@ class WhatsAppController extends Controller
 /**
  * Procesa comandos de texto enviados por el asesor.
  *
- * Formato esperado: "ESTADO lead_id" — ej: "DERIVADO 5", "CERRADO 3"
+ * Formato esperado: "ESTADO lead_id" — ej: "ACEPTADO 5", "CERRADO 3"
  * Si no viene lead_id, se busca el lead activo más reciente del store.
  *
  * Validaciones:
@@ -431,7 +431,7 @@ private function handleAdvisorTextCommand(
 
         \App\Services\WhatsAppService::sendMessage(
             to:      $fromPhone,
-            message: "❓ Comando no reconocido: \"{$text}\"\n\nComandos válidos:\n• DERIVADO [#reserva]\n• CERRADO [#reserva]\n• CANCELADO [#reserva]\n• RESERVA [#reserva]",
+            message: "❓ Comando no reconocido: \"{$text}\"\n\nComandos válidos:\n• ACEPTADO [#reserva]\n• CERRADO [#reserva]\n• CANCELADO [#reserva]\n• RESERVA [#reserva]",
             store:   $store,
         );
         return;

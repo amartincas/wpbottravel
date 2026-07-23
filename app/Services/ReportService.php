@@ -104,7 +104,7 @@ class ReportService
             "",
             "📋 Reservas totales: {$total}",
             "✅ Cerrados: {$cerrados}",
-            "🧑‍💼 Derivados a asesor: {$derivados}",
+            "✅ Aceptados: {$derivados}",
             "❌ Cancelados: {$cancelados}",
             "💰 Ventas: $" . number_format($ventas, 0, ',', '.'),
             "💵 Comisión plataforma: $" . number_format($comision, 0, ',', '.'),
@@ -178,7 +178,7 @@ class ReportService
 
             $lines[] = "🏪 *{$store->name}*";
             $lines[] = "  📋 Reservas: {$total} | 💰 $" . number_format($ventas, 0, ',', '.') . " | 💵 $" . number_format($comision, 0, ',', '.');
-            $lines[] = "  ✅ Cerrados: {$cerrados} | 🧑‍💼 Derivados: {$derivados} | ❌ Cancelados: {$cancelados}";
+            $lines[] = "  ✅ Cerrados: {$cerrados} | 🟡 Aceptados: {$derivados} | ❌ Cancelados: {$cancelados}";
             $lines[] = "";
         }
 
