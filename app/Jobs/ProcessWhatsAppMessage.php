@@ -252,7 +252,9 @@ class ProcessWhatsAppMessage implements ShouldQueue
             }
             
             // 3. Append product context (formatted with headers, no hardcoded rules)
-            if ($productContext && !empty($productContext['context'])) {
+            $hasProductContext = $productContext && !empty($productContext['context']);
+
+            if ($hasProductContext) {
                 $systemPrompt .= "\n\n### PRODUCT CATALOG DATA:\n" . $productContext['context'];
             } else {
                 // Log when no product context available
@@ -262,7 +264,18 @@ class ProcessWhatsAppMessage implements ShouldQueue
                     'message' => substr($this->messageBody, 0, 100),
                 ]);
             }
-            
+
+            // 3b. Guardrail obligatorio: nunca dejar que la IA describa un
+            // destino/plan con su conocimiento general (vuelos, hoteles,
+            // actividades "típicas") en vez de los datos reales del catálogo
+            // — eso genera expectativas y precios que el negocio no ofrece.
+            $systemPrompt .= "\n\n### REGLA DE CATÁLOGO (OBLIGATORIA):\n";
+            $systemPrompt .= "SOLO puedes dar detalles específicos (itinerario, precio, inclusiones, fechas, actividades, hoteles) que estén escritos en la sección PRODUCT CATALOG DATA de arriba. NUNCA uses tu conocimiento general sobre un destino para describir vuelos, hoteles o actividades — aunque el cliente mencione un destino que reconozcas (ej. Montego Bay, Cancún), no inventes detalles de un plan que no esté confirmado en el catálogo.\n";
+
+            if (!$hasProductContext) {
+                $systemPrompt .= "Ahora mismo no hay ningún plan en el catálogo que coincida con lo que pidió el cliente. Dile con honestidad que no tienes ese plan específico disponible en este momento y ofrécete a conectarlo con un asesor para revisar opciones — no improvises información turística general del destino.\n";
+            }
+
             // 4. Contexto de la reserva activa del cliente
             // Se consulta en cada mensaje para que la IA siempre tenga
             // el estado más reciente cuando el cliente pregunte por su reserva.

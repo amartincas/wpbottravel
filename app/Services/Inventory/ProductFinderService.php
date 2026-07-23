@@ -147,7 +147,14 @@ class ProductFinderService
     {
         $text = trim($message);
 
-        if ($text === '' || mb_strlen($text) < 3 || $this->isGenericQuery(strtolower($text))) {
+        // OJO: a propósito NO se usa isGenericQuery() acá. Esa lista de
+        // términos genéricos ("información", "precio", etc.) es para decidir
+        // si hacer un LIKE dentro de un store ya identificado — no aplica a
+        // esta búsqueda de coincidencia exacta del nombre completo del
+        // producto en el mensaje. Un mensaje puede sonar genérico y aun así
+        // traer el nombre completo del producto (ej: "quiero información
+        // sobre el plan Montego Bay, Jamaica 2027").
+        if ($text === '' || mb_strlen($text) < 3) {
             return ['store' => null, 'ambiguousStores' => null, 'matchedProducts' => collect()];
         }
 
