@@ -560,8 +560,12 @@ class WhatsAppService
             // Remove all [IMG: ...] tags from response
             $cleanText = preg_replace($pattern, '', $responseText);
 
-            // Clean up extra whitespace
-            $cleanText = trim(preg_replace('/\s+/', ' ', $cleanText));
+            // Clean up extra whitespace dejado por los tags [IMG:id] removidos,
+            // sin tocar los saltos de línea — WhatsApp los necesita para que
+            // la respuesta se vea formateada en vez de un solo párrafo corrido.
+            $cleanText = preg_replace('/[ \t]+/', ' ', $cleanText);   // espacios/tabs repetidos
+            $cleanText = preg_replace('/\n{3,}/', "\n\n", $cleanText); // máx. una línea en blanco
+            $cleanText = trim($cleanText);
 
             Log::info('AI Response processing completed', [
                 'store_id' => $store->id,
