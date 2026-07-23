@@ -39,6 +39,16 @@ class LeadsTable
                         return $column->getState();
                     })
                     ->wrap(),
+                TextColumn::make('status')
+                    ->label('Estado')
+                    ->badge()
+                    ->sortable(),
+                TextColumn::make('comision')
+                    ->label('Comisión')
+                    ->state(fn ($record) => $record->status === \App\Models\Lead::STATUS_CERRADO ? $record->getMargin() : null)
+                    ->money('COP', locale: 'es_CO')
+                    ->placeholder('—')
+                    ->sortable(false),
                 TextColumn::make('created_at')
                     ->since()
                     ->sortable(),

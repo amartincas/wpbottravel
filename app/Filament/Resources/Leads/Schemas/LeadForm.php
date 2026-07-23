@@ -48,6 +48,16 @@ class LeadForm
                     ->label('Valor Total')
                     ->helperText('Valor total de la reserva incluyendo extras')
                     ->columnSpan(2),
+                \Filament\Forms\Components\Placeholder::make('comision')
+                    ->label('Comisión Plataforma')
+                    ->content(function ($record) {
+                        if (!$record || $record->status !== Lead::STATUS_CERRADO) {
+                            return 'Solo se calcula cuando la reserva está Cerrada';
+                        }
+
+                        return '$' . number_format($record->getMargin(), 0, ',', '.');
+                    })
+                    ->columnSpan(2),
                 Select::make('status')
                     ->label('Estado de la Reserva')
                     ->options([

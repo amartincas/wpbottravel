@@ -93,6 +93,7 @@ class ReportService
         $cerrados   = $leads->where('status', Lead::STATUS_CERRADO)->count();
         $cancelados = $leads->where('status', Lead::STATUS_CANCELADO)->count();
         $derivados  = $leads->whereNotIn('status', [Lead::STATUS_CERRADO, Lead::STATUS_CANCELADO])->count();
+        $comision   = $leads->where('status', Lead::STATUS_CERRADO)->sum(fn ($l) => $l->getMargin());
 
         if ($total === 0) {
             return "📊 Reporte: {$label}\n\nNo se encontraron reservas en este período.";
@@ -106,6 +107,7 @@ class ReportService
             "🧑‍💼 Derivados a asesor: {$derivados}",
             "❌ Cancelados: {$cancelados}",
             "💰 Ventas: $" . number_format($ventas, 0, ',', '.'),
+            "💵 Comisión plataforma: $" . number_format($comision, 0, ',', '.'),
         ];
 
         $topProducts = $leads
@@ -142,6 +144,7 @@ class ReportService
         $globalVentas     = 0;
         $globalEntregados = 0;
         $globalCancelados = 0;
+        $globalComision   = 0;
         $globalClientes   = collect();
 
         $lines = ["📊 *Reporte Admin: {$label}*", ""];
@@ -163,16 +166,18 @@ class ReportService
             $cerrados   = $leads->where('status', Lead::STATUS_CERRADO)->count();
             $cancelados = $leads->where('status', Lead::STATUS_CANCELADO)->count();
             $derivados  = $leads->whereNotIn('status', [Lead::STATUS_CERRADO, Lead::STATUS_CANCELADO])->count();
+            $comision   = $leads->where('status', Lead::STATUS_CERRADO)->sum(fn ($l) => $l->getMargin());
 
             // Acumular globales
             $globalTotal      += $total;
             $globalVentas     += $ventas;
             $globalEntregados += $cerrados;
             $globalCancelados += $cancelados;
+            $globalComision   += $comision;
             $globalClientes   = $globalClientes->merge($leads->pluck('customer_phone'));
 
             $lines[] = "🏪 *{$store->name}*";
-            $lines[] = "  📋 Reservas: {$total} | 💰 $" . number_format($ventas, 0, ',', '.');
+            $lines[] = "  📋 Reservas: {$total} | 💰 $" . number_format($ventas, 0, ',', '.') . " | 💵 $" . number_format($comision, 0, ',', '.');
             $lines[] = "  ✅ Cerrados: {$cerrados} | 🧑‍💼 Derivados: {$derivados} | ❌ Cancelados: {$cancelados}";
             $lines[] = "";
         }
@@ -187,6 +192,7 @@ class ReportService
         $lines[] = "━━━━━━━━━━━━━━━";
         $lines[] = "📋 Total reservas: {$globalTotal}";
         $lines[] = "💰 Ventas totales: $" . number_format($globalVentas, 0, ',', '.');
+        $lines[] = "💵 Comisión plataforma total: $" . number_format($globalComision, 0, ',', '.');
         $lines[] = "✅ Cerrados: {$globalEntregados} | ❌ Cancelados: {$globalCancelados}";
         $lines[] = "🎯 Ticket promedio: $" . number_format($ticketProm, 0, ',', '.');
         $lines[] = "👥 Clientes únicos: {$clientesUnicos}";
