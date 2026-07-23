@@ -338,8 +338,12 @@ class ProcessWhatsAppMessage implements ShouldQueue
 
             $messageToSend = $aiResponse;
 
-            // Extract lead data from the conversation for both explicit and fallback detection
-            $leadData = $this->extractLeadDataWithAI($history, $aiResponse);
+            // Extract lead data from the conversation for both explicit and fallback detection.
+            // Le pasamos el nombre del/los producto(s) actualmente en contexto — sin esto,
+            // la extracción no tiene forma de saber de qué plan se está hablando a menos
+            // que el cliente repita el nombre completo en los últimos mensajes.
+            $activeProductNames = collect($productContext['products'] ?? [])->pluck('name')->filter()->all();
+            $leadData = $this->extractLeadDataWithAI($history, $aiResponse, $activeProductNames);
 
             // Acumular en caché lo extraído en este turno — igual que la ubicación
             // pendiente, así el pedido no depende de que la ventana de extracción
@@ -976,7 +980,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
      * @param string $lastAiResponse The last AI response before [LEAD_COMPLETE]
      * @return array Extracted lead data
      */
-    private function extractLeadDataWithAI(array $history, string $lastAiResponse): array
+    private function extractLeadDataWithAI(array $history, string $lastAiResponse, array $activeProductNames = []): array
     {
         $leadData = [
             'customer_name' => null,
@@ -993,18 +997,21 @@ class ProcessWhatsAppMessage implements ShouldQueue
         try {
             // Build extraction prompt focusing on CURRENT context
             $today = now()->format('Y-m-d (l)');
+            $activeProductsLine = !empty($activeProductNames)
+                ? implode(', ', $activeProductNames)
+                : '(none matched for the current message)';
             $extractionPrompt = <<<PROMPT
 You are a data extraction specialist. Extract customer information from the conversation.
 
 Today's date is {$today}.
 
+ACTIVE CATALOG PLAN(S) IN THIS CONVERSATION: {$activeProductsLine}
+
 CRITICAL RULES FOR EXTRACTION:
-1. Only extract the product/service the customer EXPLICITLY confirmed or requested in the MOST RECENT message
-2. IGNORE any products mentioned earlier if the customer changed their mind or topic
-3. The product/service must be mentioned in either:
-   - The last customer message, OR
-   - The last AI response (where you confirmed their request)
-4. Do NOT use products from the beginning of the conversation if they were discussing a different service later
+1. If exactly ONE plan is listed above and nothing in the conversation suggests the customer switched to asking about a different plan, use that plan's exact name as product_service_name — the customer does NOT need to repeat the full name themselves, the whole conversation is already about it.
+2. If multiple plans are listed above, only set product_service_name to one of them if the conversation makes clear which one the customer means.
+3. If no plan is listed above, only extract product_service_name when it's clearly stated by the customer or confirmed by the assistant in the recent conversation.
+4. IGNORE the plan(s) listed above if the customer's most recent messages clearly show they changed their mind or are now asking about something else entirely.
 5. For tour_date: keep the customer's own wording/intent, don't force it into a rigid format. If they gave an exact date, write it clearly (e.g. "15 de agosto 2026"). If they gave a relative or open-ended reference (e.g. "after August 15", "next weekend", "sometime in September"), use today's date as reference to make it concrete where you reasonably can, but preserve the open-ended nature instead of inventing a single exact day (e.g. "después del 15 de agosto 2026", not a fabricated exact date). Only use null if the customer gave no date reference at all.
 6. For travelers_count: capture it exactly as the customer described it, including any adult/children breakdown (e.g. "2 adultos y 3 niños", "4 personas"). Do NOT reduce it to a plain number if the customer gave more detail than that.
 
@@ -1072,8 +1079,14 @@ PROMPT;
                     $recentText = implode(' ', array_column($contextMessages, 'content'))
                         . ' ' . $this->messageBody . ' ' . $lastAiResponse;
 
-                    // Check if product appears in recent context (case-insensitive)
-                    if (stripos($recentText, $productName) === false) {
+                    // Válido si aparece en el texto reciente, O si es (una de)
+                    // el/los plan(es) activo(s) del catálogo que le pasamos
+                    // como pista — ese caso no requiere que el cliente repita
+                    // el nombre completo del plan en su último mensaje.
+                    $matchesActiveProduct = collect($activeProductNames)
+                        ->contains(fn ($name) => strcasecmp($name, $productName) === 0);
+
+                    if (!$matchesActiveProduct && stripos($recentText, $productName) === false) {
                         Log::warning('Extracted product not in recent context', [
                             'extracted_product' => $productName,
                             'recent_text' => substr($recentText, 0, 200),
@@ -1206,7 +1219,22 @@ PROMPT;
 
         $merged = [];
         foreach (['customer_name', 'meeting_point', 'origin_city', 'tour_date', 'travelers_count', 'product_service_name', 'total_amount', 'order_extras', 'comments'] as $field) {
-            $merged[$field] = !empty($freshData[$field]) ? $freshData[$field] : ($cached[$field] ?? null);
+            $fresh = $freshData[$field] ?? null;
+            $prevCached = $cached[$field] ?? null;
+
+            // Caso especial: si lo nuevo es un fragmento más corto de lo ya
+            // guardado (ej. la IA extrajo solo "Adalberto" de un mensaje del
+            // propio bot como "¡Excelente, Adalberto!", pisando el nombre
+            // completo "Adalberto Martínez" ya confirmado), no lo dejamos
+            // sobreescribir — se conserva la versión más completa.
+            if (!empty($fresh) && !empty($prevCached)
+                && strlen($fresh) < strlen($prevCached)
+                && stripos($prevCached, $fresh) !== false) {
+                $merged[$field] = $prevCached;
+                continue;
+            }
+
+            $merged[$field] = !empty($fresh) ? $fresh : $prevCached;
         }
 
         Cache::put($draftKey, $merged, now()->addHours(4));
