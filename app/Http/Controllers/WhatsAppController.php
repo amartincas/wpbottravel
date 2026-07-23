@@ -589,8 +589,10 @@ private function handleResendReservationInfo(
     $resumen = "📋 *Reserva #{$lead->id}*\n\n"
         . "👤 Cliente: " . ($lead->customer_name ?? 'N/A') . "\n"
         . "📞 Teléfono: {$lead->customer_phone}\n"
+        . "🏙️ Ciudad origen: " . ($lead->origin_city ?? 'N/A') . "\n"
         . "📍 Punto de encuentro: " . ($lead->meeting_point ?? 'N/A') . "\n"
-        . "📅 Fecha del tour: " . ($lead->tour_date?->format('Y-m-d') ?? 'N/A') . "\n"
+        . "👥 Personas: " . ($lead->travelers_count ?? 'N/A') . "\n"
+        . "📅 Fecha del viaje: " . ($lead->tour_date ?? 'N/A') . "\n"
         . "🎟️ Tour/Servicio: {$producto}\n"
         . "💰 Valor: {$valor}\n"
         . "📌 Estado: *{$lead->status}*";

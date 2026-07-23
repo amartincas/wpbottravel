@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\Leads\Schemas;
 
-use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -30,11 +29,20 @@ class LeadForm
                     ->label('Punto de Encuentro / Referencia')
                     ->rows(3)
                     ->columnSpanFull(),
-                DatePicker::make('tour_date')
-                    ->label('Fecha del Tour')
+                TextInput::make('origin_city')
+                    ->label('Ciudad de Origen')
+                    ->columnSpan(2),
+                TextInput::make('travelers_count')
+                    ->label('Personas')
+                    ->placeholder('Ej: 2 adultos y 3 niños')
+                    ->columnSpan(2),
+                TextInput::make('tour_date')
+                    ->label('Fecha del Viaje')
+                    ->placeholder('Ej: después del 15 de agosto 2026')
+                    ->helperText('Texto libre — el cliente rara vez da una fecha exacta')
                     ->columnSpan(2),
                 TextInput::make('product_service_name')
-                    ->label('Tour / Servicio')
+                    ->label('Tour / Servicio (Destino)')
                     ->columnSpan(2),
                 TextInput::make('total_amount')
                     ->label('Valor Total')

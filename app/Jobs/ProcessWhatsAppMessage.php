@@ -286,7 +286,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 $systemPrompt .= "Tour/Servicio: " . ($activeLead->product_service_name ?? 'N/A') . "\n";
                 $systemPrompt .= "Total: " . ($activeLead->total_amount ? '$' . number_format((float) preg_replace('/[^0-9.]/', '', $activeLead->total_amount), 0, ',', '.') : 'N/A') . "\n";
                 $systemPrompt .= "Punto de encuentro: " . ($activeLead->meeting_point ?? 'N/A') . "\n";
-                $systemPrompt .= "Fecha del tour: " . ($activeLead->tour_date?->format('Y-m-d') ?? 'N/A') . "\n";
+                $systemPrompt .= "Fecha del viaje: " . ($activeLead->tour_date ?? 'N/A') . "\n";
                 $systemPrompt .= "Estado actual: " . $statusLabel . "\n";
                 $systemPrompt .= "Última actualización: " . $activeLead->updated_at->format('Y-m-d H:i') . "\n";
                 $systemPrompt .= "\nSi el cliente pregunta por su reserva, responde ÚNICAMENTE con el estado registrado arriba. Nunca inventes estados ni fechas de contacto del asesor.\n";
@@ -302,7 +302,8 @@ class ProcessWhatsAppMessage implements ShouldQueue
             $systemPrompt .= "\n\n### SYSTEM METADATA:\n";
             $systemPrompt .= "Current Date/Time: " . now()->format('Y-m-d H:i:s') . "\n";
             $systemPrompt .= "Lead Completion Signal: [LEAD_COMPLETE]\n";
-            $systemPrompt .= "ONLY append [LEAD_COMPLETE] when the customer has EXPLICITLY confirmed they want to move forward with the booking and are ready to be connected with an advisor to close payment (sí, confirmo, correcto, acepto, listo, dale, de acuerdo) AFTER you have shown the full booking summary. Never emit this token before showing the summary. Never emit this token more than once per conversation unless the customer explicitly starts a NEW and SEPARATE booking after the previous one was already confirmed.\n";
+            $systemPrompt .= "Before showing the final booking summary, ALWAYS ask the customer if there's anything else the advisor should know about their trip (optional — e.g. reduced mobility, dietary restrictions, traveling with children, medical conditions, special occasions). Make clear it's optional and they can say no. Wait for their answer (even if it's 'no' or 'nada') before showing the summary — do not skip this question.\n";
+            $systemPrompt .= "ONLY append [LEAD_COMPLETE] when the customer has EXPLICITLY confirmed they want to move forward with the booking and are ready to be connected with an advisor to close payment (sí, confirmo, correcto, acepto, listo, dale, de acuerdo) AFTER you have asked about additional comments AND shown the full booking summary. Never emit this token before showing the summary. Never emit this token more than once per conversation unless the customer explicitly starts a NEW and SEPARATE booking after the previous one was already confirmed.\n";
 
             // Get the configured AI service for this store
             $aiEngine = AIServiceFactory::make($this->store);
@@ -356,7 +357,9 @@ class ProcessWhatsAppMessage implements ShouldQueue
                     'customer_phone'        => $this->from,
                     'customer_name'         => $leadData['customer_name'] ?? null,
                     'meeting_point'         => $leadData['meeting_point'] ?? null,
+                    'origin_city'           => $leadData['origin_city'] ?? null,
                     'tour_date'             => $leadData['tour_date'] ?? null,
+                    'travelers_count'       => $leadData['travelers_count'] ?? null,
                     'product_service_name'  => $leadData['product_service_name'] ?? null,
                     'product_name'          => $snapshot['product_name'],
                     'product_sale_price'    => $snapshot['product_sale_price'],
@@ -466,14 +469,16 @@ class ProcessWhatsAppMessage implements ShouldQueue
      * Envía notificación de nuevo lead al WhatsApp del asesor.
      * Usa plantilla Meta (HSM) porque el asesor no inicia conversación.
      *
-     * Variables de la plantilla:
+     * Variables de la plantilla Meta "nuevo_lead":
      *   {{1}} nombre del asesor/agencia
      *   {{2}} lead_id
      *   {{3}} customer_name
-     *   {{4}} meeting_point
-     *   {{5}} customer_phone
-     *   {{6}} product_service_name
-     *   {{7}} total_amount
+     *   {{4}} customer_phone
+     *   {{5}} origin_city
+     *   {{6}} product_service_name (destino/tour confirmado)
+     *   {{7}} travelers_count
+     *   {{8}} tour_date
+     *   {{9}} comments
     /**
      * Resuelve el snapshot de precios del pedido desde la BD.
      * Garantiza inmutabilidad histórica de precios.
@@ -610,35 +615,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
         }
 
         try {
-            // Valor del pedido: total_amount extraído por la IA (incluye extras).
-            // Fallback al precio base del producto en la BD.
-            $valor = null;
-
-            if (!empty($lead->total_amount)) {
-                $raw = preg_replace('/[^0-9.]/', '', $lead->total_amount);
-                $valor = is_numeric($raw)
-                    ? '$' . number_format((float) $raw, 0, ',', '.')
-                    : $lead->total_amount;
-            }
-
-            if (!$valor) {
-                $productName = $leadData['product_service_name'] ?? null;
-                if ($productName) {
-                    $product = \App\Models\Product::where('store_id', $this->store->id)
-                        ->where('name', 'like', '%' . $productName . '%')
-                        ->first();
-                    if ($product) {
-                        $valor = '$' . number_format($product->price, 0, ',', '.');
-                    }
-                }
-            }
-
-            $valor = $valor ?? 'Consultar';
-
-            // Variables en el orden exacto de la plantilla Meta:
-            // {{1}} store name  {{2}} lead_id  {{3}} customer_name
-            // {{4}} address     {{5}} phone     {{6}} product  {{7}} valor
-            // Nombre limpio del producto con extras
+            // Nombre limpio del tour/destino confirmado, con extras si aplica
             $productForTemplate = $lead->product_name
                 ?? $leadData['product_service_name']
                 ?? 'N/A';
@@ -647,17 +624,20 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 $productForTemplate .= ' + ' . $leadData['order_extras'];
             }
 
-            // Variables en el orden configurado en la plantilla del asesor:
-            // {{1}} store name  {{2}} lead_id  {{3}} customer_name
-            // {{4}} meeting_point  {{5}} phone  {{6}} product  {{7}} valor
+            // Variables en el orden de la plantilla Meta "nuevo_lead":
+            // {{1}} nombre del asesor/agencia  {{2}} lead_id  {{3}} customer_name
+            // {{4}} customer_phone  {{5}} origin_city  {{6}} destino (tour)
+            // {{7}} travelers_count  {{8}} tour_date  {{9}} comments
             $variables = [
                 $this->store->name,
                 (string) $lead->id,
                 $leadData['customer_name'] ?? 'N/A',
-                $leadData['meeting_point'] ?? 'N/A',
                 $this->from,
+                $leadData['origin_city'] ?? 'N/A',
                 $productForTemplate,
-                $valor,
+                $lead->travelers_count ?: 'N/A',
+                $lead->tour_date ?: 'N/A',
+                $leadData['comments'] ?? 'N/A',
             ];
 
             // Registrar el envío para poder rastrear su entrega (delivery_status
@@ -684,7 +664,6 @@ class ProcessWhatsAppMessage implements ShouldQueue
                     'lead_id'  => $lead->id,
                     'advisor'  => $this->store->advisor_whatsapp,
                     'template' => $this->store->advisor_notification_template,
-                    'valor'    => $valor,
                 ]);
             } else {
                 Log::warning('ADVISOR_NOTIFY: Fallo al enviar reserva al asesor', [
@@ -989,7 +968,9 @@ class ProcessWhatsAppMessage implements ShouldQueue
         $leadData = [
             'customer_name' => null,
             'meeting_point' => null,
+            'origin_city' => null,
             'tour_date' => null,
+            'travelers_count' => null,
             'product_service_name' => null,
             'total_amount' => null,
             'order_extras' => null,
@@ -998,8 +979,11 @@ class ProcessWhatsAppMessage implements ShouldQueue
 
         try {
             // Build extraction prompt focusing on CURRENT context
-            $extractionPrompt = <<<'PROMPT'
+            $today = now()->format('Y-m-d (l)');
+            $extractionPrompt = <<<PROMPT
 You are a data extraction specialist. Extract customer information from the conversation.
+
+Today's date is {$today}.
 
 CRITICAL RULES FOR EXTRACTION:
 1. Only extract the product/service the customer EXPLICITLY confirmed or requested in the MOST RECENT message
@@ -1008,16 +992,20 @@ CRITICAL RULES FOR EXTRACTION:
    - The last customer message, OR
    - The last AI response (where you confirmed their request)
 4. Do NOT use products from the beginning of the conversation if they were discussing a different service later
+5. For tour_date: keep the customer's own wording/intent, don't force it into a rigid format. If they gave an exact date, write it clearly (e.g. "15 de agosto 2026"). If they gave a relative or open-ended reference (e.g. "after August 15", "next weekend", "sometime in September"), use today's date as reference to make it concrete where you reasonably can, but preserve the open-ended nature instead of inventing a single exact day (e.g. "después del 15 de agosto 2026", not a fabricated exact date). Only use null if the customer gave no date reference at all.
+6. For travelers_count: capture it exactly as the customer described it, including any adult/children breakdown (e.g. "2 adultos y 3 niños", "4 personas"). Do NOT reduce it to a plain number if the customer gave more detail than that.
 
 Return ONLY valid JSON (no markdown, no code blocks, no extra text):
 {
   "customer_name": "extracted name or null",
   "meeting_point": "meeting point / pickup reference the customer gave, or null",
-  "tour_date": "date of the tour/activity in YYYY-MM-DD format if the customer confirmed one, or null",
+  "origin_city": "the traveler's city of origin (where they are traveling FROM), or null",
+  "tour_date": "the travel date/timeframe per rule 5 above, as free text, or null",
+  "travelers_count": "number/composition of travelers per rule 6 above, as free text, or null if not confirmed",
   "product_service_name": "CURRENT confirmed service only - not from earlier in conversation",
   "total_amount": "total booking value as plain number without symbols, e.g. 48900, or null if not confirmed",
   "order_extras": "comma separated list of extras the customer confirmed, exactly as named in the catalog, or null if none",
-  "comments": "any special instructions or observations from the customer about the booking, or null if none"
+  "comments": "anything extra the customer wants the advisor to know (e.g. reduced mobility, dietary restrictions, children, medical conditions, special occasions), or null if they said no/nothing/nada"
 }
 
 CONVERSATION:
@@ -1087,7 +1075,9 @@ PROMPT;
                 // Sanitize and validate each field
                 $leadData['customer_name'] = $this->sanitizeString($extracted['customer_name'] ?? null, 100);
                 $leadData['meeting_point'] = $this->sanitizeString($extracted['meeting_point'] ?? null, 255);
-                $leadData['tour_date'] = $this->sanitizeString($extracted['tour_date'] ?? null, 20);
+                $leadData['origin_city'] = $this->sanitizeString($extracted['origin_city'] ?? null, 100);
+                $leadData['tour_date'] = $this->sanitizeString($extracted['tour_date'] ?? null, 100);
+                $leadData['travelers_count'] = $this->sanitizeString($extracted['travelers_count'] ?? null, 100);
                 $leadData['product_service_name'] = $this->sanitizeString($extracted['product_service_name'] ?? null, 150);
                 $leadData['total_amount'] = $this->sanitizeString($extracted['total_amount'] ?? null, 50);
                 $leadData['order_extras'] = $this->sanitizeString($extracted['order_extras'] ?? null, 255);
@@ -1202,7 +1192,7 @@ PROMPT;
         $cached = Cache::get($draftKey, []);
 
         $merged = [];
-        foreach (['customer_name', 'meeting_point', 'tour_date', 'product_service_name', 'total_amount', 'order_extras', 'comments'] as $field) {
+        foreach (['customer_name', 'meeting_point', 'origin_city', 'tour_date', 'travelers_count', 'product_service_name', 'total_amount', 'order_extras', 'comments'] as $field) {
             $merged[$field] = !empty($freshData[$field]) ? $freshData[$field] : ($cached[$field] ?? null);
         }
 
